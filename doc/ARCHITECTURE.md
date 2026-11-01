@@ -494,8 +494,10 @@ for a board without a monitor or physical access: Main_MiSTer is stopped, the FA
 script in `/dev/shm` that runs only on a static busybox (the kernel has no SysRq) remounts `/` read-only or, when
 that is busy, freezes it (`fsfreeze`; a tmpfs on `/var/log` takes the wtmp record of `reboot`, which would wait for
 the frozen file system). Neither: nothing is written. It receives the image (TCP 5555), writes `/dev/mmcblk0`
-(`dd conv=fsync`), drops the page cache, reads the card back with `dd` and hands out its SHA-256 (TCP 5556). Only
-when it matches the image does the host send the reboot (TCP 5557, `reboot -f -n`). The board gets a new DHCP
+(`dd conv=fsync`), drops the page cache, reads the card back with `dd` and hands out a report (TCP 5556): the
+protection of `/`, the end of the `dd` log and an MD5 per 64 MiB chunk. Only when every chunk matches the image
+does the host send the reboot (TCP 5557, `reboot -f -n`); otherwise it lists the chunks that differ (offset,
+partition) and leaves the board waiting for `reboot` or `abort` on that port. The board gets a new DHCP
 lease and new SSH host keys; it is reachable under its host name `mister-<platform>` where the router registers
 DHCP names. `SSH_KEYS` (default `~/.ssh/id_ed25519.pub`) goes to
 `/linux/authorized_keys` of the new FAT partition beforehand, so root key login survives the flash. An interrupted

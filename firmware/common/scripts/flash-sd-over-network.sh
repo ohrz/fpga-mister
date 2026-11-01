@@ -55,9 +55,14 @@ if [ -n "$keys" ]; then
     echo "   $keys -> /linux/authorized_keys of the FAT partition"
 fi
 size=$(stat -c %s "$img")
-[ $((size % 512)) = 0 ] || { echo "ERROR: $image is not a multiple of 512 bytes" >&2; exit 1; }
-sum=$(sha256sum "$img" | cut -d' ' -f1)
-echo "   $size bytes, sha256 $sum"
+[ $((size % 1048576)) = 0 ] || { echo "ERROR: $image is not a multiple of 1 MiB (make-sd-image.sh makes it so)" >&2; exit 1; }
+# checksums per 64 MiB chunk: a difference on the card shows where it is
+mib=$((size / 1048576)); chunk=64; n=$(( (mib + chunk - 1) / chunk ))
+for ((i = 0; i < n; i++)); do
+    c=$chunk; [ $(( (i + 1) * chunk )) -le $mib ] || c=$(( mib - i * chunk ))
+    echo "$i $(dd if="$img" bs=1M skip=$(( i * chunk )) count=$c status=none | md5sum | cut -d' ' -f1)"
+done > "$tmp/sums"
+echo "   $size bytes, $n chunks of $chunk MiB (MD5)"
 
 # 2. the board: card size, Main_MiSTer stopped, FAT partition unmounted, busybox in RAM
 echo "== board $board"
@@ -65,11 +70,9 @@ card=$(ssh "${ssh_opts[@]}" root@"$board" "blockdev --getsize64 $dev")
 [ "$card" -ge "$size" ] || { echo "ERROR: the card ($card bytes) is smaller than the image ($size bytes)" >&2; exit 1; }
 echo "   card $dev: $card bytes"
 scp -q "${ssh_opts[@]}" "$busybox" root@"$board":/dev/shm/busybox
-ssh "${ssh_opts[@]}" root@"$board" sh -s "$dev" "$size" <<'EOT'
+ssh "${ssh_opts[@]}" root@"$board" sh -s "$dev" "$mib" "$chunk" "$n" <<'EOT'
 set -e
-dev=$1; size=$2
-# read back with dd and a block count: busybox head -c takes no count above 2^31 on 32-bit
-if [ $((size % 1048576)) = 0 ]; then bs=1M; count=$((size / 1048576)); else bs=512; count=$((size / 512)); fi
+dev=$1; mib=$2; chunk=$3; n=$4
 /dev/shm/busybox chmod 755 /dev/shm/busybox
 /dev/shm/busybox nc 2>&1 | /dev/shm/busybox grep -q -- '-l' || { echo "ERROR: busybox nc without -l" >&2; exit 1; }
 systemctl stop mister.service 2>/dev/null || true
@@ -92,7 +95,15 @@ else exit 1; fi
 # no global sync from here on (it would wait for the frozen file system): fsync of the card only
 \$bb nc -l -p 5555 | \$bb dd of=$dev bs=1M conv=fsync 2> /dev/shm/dd.log
 echo 3 > /proc/sys/vm/drop_caches
-echo "\$(\$bb dd if=$dev bs=$bs count=$count 2>/dev/null | \$bb sha256sum | \$bb cut -d' ' -f1) \$ro" > /dev/shm/sum
+# report: protection of /, the end of the dd log (records, errors), MD5 per chunk read from the card
+# (dd with block counts: busybox head -c takes no count above 2^31 on 32-bit)
+{ echo "ro \$ro"; \$bb tail -n 3 /dev/shm/dd.log | \$bb sed 's/^/dd /'; } > /dev/shm/sum
+i=0
+while [ \$i -lt $n ]; do
+    c=$chunk; [ \$(( (i + 1) * $chunk )) -le $mib ] || c=\$(( $mib - i * $chunk ))
+    echo "\$i \$(\$bb dd if=$dev bs=1M skip=\$(( i * $chunk )) count=\$c 2>/dev/null | \$bb md5sum | \$bb cut -d' ' -f1)" >> /dev/shm/sum
+    i=\$((i + 1))
+done
 # every connection gets the checksum; only "reboot" or "abort" on port 5557 ends the script
 # (a port scan or an empty connection does not)
 ( while :; do \$bb nc -l -p 5556 < /dev/shm/sum; done ) &
@@ -122,14 +133,24 @@ done
 cat "$img" >&3
 exec 3>&-
 echo "   sent in $(( $(date +%s) - t )) s, waiting for the read-back checksum"
-board_sum=""
+report=""
 for i in $(seq 1 600); do
-    if board_sum=$( { cat < /dev/tcp/"$board"/5556; } 2>/dev/null ) && [ -n "$board_sum" ]; then break; fi
+    if report=$( { cat < /dev/tcp/"$board"/5556; } 2>/dev/null ) && [ -n "$report" ]; then break; fi
     sleep 2
 done
-echo "   card sha256 ${board_sum% *} (root file system: ${board_sum#* })"
-if [ "${board_sum% *}" != "$sum" ]; then
-    echo "ERROR: checksum differs, the card is not rebooted. Write it again (the board waits:" >&2
+echo "$report" | grep -v '^[0-9]' | sed 's/^/   board: /'
+echo "$report" | grep '^[0-9]' > "$tmp/card-sums" || true
+bad=$(awk 'NR == FNR { card[$1] = $2; next } card[$1] != $2 { printf "%s ", $1 }' "$tmp/card-sums" "$tmp/sums")
+if [ -n "$bad" ] || [ "$(wc -l < "$tmp/card-sums")" != "$n" ]; then
+    echo "   chunks that differ (MiB offset, partition of the image):" >&2
+    p2=$(sfdisk -d "$img" | sed -n 's/^[^ ]*2 : start= *\([0-9]*\),.*/\1/p')
+    for i in $bad; do
+        off=$(( i * chunk )); part=1; [ $(( off * 2048 )) -lt $(( p2 )) ] || part=2
+        echo "     chunk $i: $off-$(( off + chunk )) MiB (partition $part)" >&2
+    done
+    echo "   $(wc -l < "$tmp/card-sums") of $n chunks read back, $(echo $bad | wc -w) differ" >&2
+
+    echo "ERROR: the card differs from the image, it is not rebooted. Write it again (the board waits:" >&2
     echo "       echo abort > /dev/tcp/$board/5557, then reboot it), or boot it anyway:" >&2
     echo "       echo reboot > /dev/tcp/$board/5557" >&2
     exit 1
@@ -140,4 +161,5 @@ for i in $(seq 1 10); do
     sleep 1
 done
 ssh-keygen -R "$board" >/dev/null 2>&1 || true
+echo "   all $n chunks match"
 echo "== $board reboots from the new card ($(( $(date +%s) - t )) s)"
