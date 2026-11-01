@@ -1,0 +1,45 @@
+tmp/
+_Checkouts/
+# game images for tests (not distributable): roms/<files>, built into the core images by FLOW=mister package
+roms/
+# lab addresses of another lab (firmware/common/lab.mk)
+lab.local.mk
+firmware/build/
+
+# Vivado / Vitis tool output
+.Xil/
+.crashReporter/
+*.jou
+*.log
+*.str
+vivado_pid*.zip
+
+# generated next to the sources (xsa-export)
+firmware/targets/*/scripts/design.xsa
+firmware/targets/*/scripts/psu_init*
+firmware/targets/*/scripts/*.bit
+
+# editor backups, python
+*~
+__pycache__/
+
+# kernel module and Vitis BSP build output
+*.o
+*.ko
+*.mod
+*.mod.c
+.*.cmd
+modules.order
+Module.symvers
+
+# no binaries in Git: kernel image and packages come from
+# firmware/build/<P>/<V>/kernel/ (FLOW=kernel build/collect), the FSBL is built on demand
+firmware/targets/*/files/debian/
+firmware/targets/*/files/fsbl/
+*.deb
+
+# GHDL/NVC work libraries of the testbenches
+work/
+*.cf
+*.ghw
+*.vcd

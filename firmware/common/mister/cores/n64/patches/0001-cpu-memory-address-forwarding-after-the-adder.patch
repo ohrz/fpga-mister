@@ -1,0 +1,39 @@
+Title      : cpu: memory address with the operand forwarding select after the adder
+Project    : fpga-mister (patch for N64_MiSTer 5725381)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-31
+Description:
+  calcMemAddr (stage 3) adds the immediate to value1, the forwarding mux of
+  resultData, writebackData and decodeValue1.  On the xc7z020 at 93.75 MHz
+  the select (executeForwardValue1 and resultWriteEnable, fan-out ~90) in
+  front of the 64-bit carry chain starts the CPU's worst paths: address ->
+  TLB, COP0 BadVAddr/EntryHi, cache tag, executeMemAddress, stall (a
+  build without it: 389 failing endpoints, -1.728 ns, most from
+  resultWriteEnable).  cores/n64/cpu_addr_fwd.vhd adds the immediate to each
+  source and selects the sum: the same value in every cycle, the select
+  moves behind the adders.  Bench n64_cpu_addr_fwd_tb (against the original
+  expression, 5 mutants).
+--- a/rtl/cpu.vhd	2026-10-31 17:48:41.105688353 +0100
++++ b/rtl/cpu.vhd	2026-10-31 17:48:41.113442910 +0100
+@@ -2087,7 +2087,19 @@
+    value2_muxedSigned <= unsigned(resize(signed(decodeImmData), 64)) when (decodeUseImmidateValue2) else value2;
+    calcResult_add     <= value1 + value2_muxedSigned;
+    
+-   calcMemAddr        <= value1 + unsigned(resize(signed(decodeImmData), 64));
++   -- fpga-mister: forwarding select after the adder (timing on the xc7z020, cores/n64/cpu_addr_fwd.vhd)
++   icpu_addr_fwd : entity work.n64_cpu_addr_fwd
++   port map
++   (
++      resultData             => resultData,
++      writebackData          => writebackData,
++      decodeValue1           => decodeValue1,
++      decodeImmData          => decodeImmData,
++      executeForwardValue1   => executeForwardValue1,
++      resultWriteEnable      => resultWriteEnable,
++      writebackForwardValue1 => writebackForwardValue1,
++      calcMemAddr            => calcMemAddr
++   );
+    
+    ---------------------- Shifter ------------------
+    -- multiplex immidiate and register based shift amount, so both types can use the same shifters

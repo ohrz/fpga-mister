@@ -1,0 +1,29 @@
+# External sources of fpga-mister, cloned into _Checkouts/<name> by firmware/common/scripts/checkout.sh
+# (every flow's "make setup" and the build scripts use it; firmware/common/checkouts.mk reads this
+# table for the Makefiles).  One line per source:
+#
+#   name  url  branch  rev  options
+#
+#   branch   branch to clone (- = the repository's default branch); $VIVADO_VER is replaced by the
+#            Vivado version (release branches of the Xilinx repositories)
+#   rev      commit or tag checked out (detached) and verified; - = the tip of the branch (the
+#            checkout must then be at origin/<branch>, checkout.sh --check tells how to switch)
+#   options  shallow (--depth 1: release branches and tags only), submodules (--recursive), or -
+#
+# The MiSTer sources stay untouched: changes for Vivado/Zynq are patches in firmware/common/mister/
+# (applied to a copy in the build tree), never edits in _Checkouts.
+# Used by: soc-prebuilt-firmware (FLOW=boot, ZynqMP boards), vivado-library (rgb2dvi, FLOW=vivado),
+# Template_MiSTer (sys/ framework), Main_MiSTer (ARM application, Zynq port), Menu_MiSTer (menu core
+# menu.rbf), MSX_MiSTer (MSX2/2+), SNES_MiSTer (SNES), PSX_MiSTer (PlayStation), N64_MiSTer
+# (Nintendo 64). Who wrote them: README.md, section "Credits".
+# The HDMI transmitter with sound of the _hdmi designs is part of this repository
+# (firmware/common/ip/hdmi-tx).
+soc-prebuilt-firmware         https://github.com/Xilinx/soc-prebuilt-firmware                  xlnx_rel_v$VIVADO_VER  -                                         shallow
+vivado-library                https://github.com/Digilent/vivado-library.git                   master                 -                                         -
+Template_MiSTer               https://github.com/MiSTer-devel/Template_MiSTer.git              master                 5dda37366d02b04b8448da7b322235c1831af811  -
+MSX_MiSTer                    https://github.com/MiSTer-devel/MSX_MiSTer.git                   master                 bb1301693478dc2b4fe1ab5f9528f446a1a8816c  -
+Main_MiSTer                   https://github.com/MiSTer-devel/Main_MiSTer.git                  master                 b57370d56642e216a9c8aea026b402a8409a3541  -
+Menu_MiSTer                   https://github.com/MiSTer-devel/Menu_MiSTer.git                  master                 fa83dc15b9545b58021f62738f0d69bba71ab187  -
+N64_MiSTer                    https://github.com/MiSTer-devel/N64_MiSTer.git                   main                   5725381706e0710c1eb6d38b46f6675fc05a12ce  -
+SNES_MiSTer                   https://github.com/MiSTer-devel/SNES_MiSTer.git                  master                 bdcd33c5cab652109eeb7c695910b77b6f21df2f  -
+PSX_MiSTer                    https://github.com/MiSTer-devel/PSX_MiSTer.git                   main                   cd17b5a0ad261005c321d9d5ba41b8dbe313a7d3  -

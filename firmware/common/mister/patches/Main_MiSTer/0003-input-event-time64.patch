@@ -1,0 +1,35 @@
+Title      : input_event time fields for 64-bit time_t
+Project    : fpga-mister (patch for Main_MiSTer b57370d)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-28
+Description:
+  input.cpp copies struct timeval into struct input_event.time; with 64-bit time_t on 32-bit ARM
+  (Ubuntu 24.04 armhf, _TIME_BITS=64) the field is __sec/__usec. The input_event_sec/usec macros
+  of <linux/input.h> name the right fields with either time_t.
+
+diff --git a/input.cpp b/input.cpp
+index dedde45..9872034 100644
+--- a/input.cpp
++++ b/input.cpp
+@@ -2091,14 +2091,18 @@ static void uinp_send_key(uint16_t key, int press)
+ 		}
+ 
+ 		memset(&uinp_ev, 0, sizeof(uinp_ev));
+-		gettimeofday(&uinp_ev.time, NULL);
++		struct timeval tv;
++		gettimeofday(&tv, NULL);
++		uinp_ev.input_event_sec = tv.tv_sec;
++		uinp_ev.input_event_usec = tv.tv_usec;
+ 		uinp_ev.type = EV_KEY;
+ 		uinp_ev.code = key;
+ 		uinp_ev.value = press;
+ 		write(uinp_fd, &uinp_ev, sizeof(uinp_ev));
+ 
+ 		static struct input_event ev;
+-		ev.time = uinp_ev.time;
++		ev.input_event_sec = uinp_ev.input_event_sec;
++		ev.input_event_usec = uinp_ev.input_event_usec;
+ 		ev.type = EV_SYN;
+ 		ev.code = SYN_REPORT;
+ 		ev.value = 0;

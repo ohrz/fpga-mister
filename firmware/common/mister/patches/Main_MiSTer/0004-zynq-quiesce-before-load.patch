@@ -1,0 +1,60 @@
+Title      : Quiesce the HP ports before a core is loaded (ZYNQ)
+Project    : fpga-mister (patch for Main_MiSTer b57370d)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-29
+Description:
+  zynq_load writes CTRL bit 0 of hps_bus_axi (0xC) and waits up to 200 ms for STATUS bit 2:
+  the design has stopped starting AXI transactions on its HP ports and every open one has
+  completed. A transaction left open by a reconfiguration stays in the AFI of the port; the
+  next design then gets foreign responses or its write data goes to the old address, and its
+  core clock stalls for good. Designs without the register never report
+  idle; the 200 ms then let the core finish the memory clearing that fpga_core_reset started.
+
+--- a/fpga_io.cpp
++++ b/fpga_io.cpp
+@@ -29,6 +29,9 @@
+ #define ZYNQ_REG_GPO  (0x0 / 4)
+ #define ZYNQ_REG_GPI  (0x4 / 4)
+ #define ZYNQ_REG_ID   (0x8 / 4)
++#define ZYNQ_REG_STATUS (0xC / 4)   // read: STATUS, write: CTRL
++#define ZYNQ_CTRL_QUIESCE  0x1
++#define ZYNQ_STATUS_IDLE   0x4
+ #define ZYNQ_ID       0x5A4D5354
+ 
+ #define ZYNQ_FPGA_MGR "/sys/class/fpga_manager/fpga0/"
+@@ -77,6 +80,25 @@
+ 	return map_base[ZYNQ_REG_ID] == ZYNQ_ID;
+ }
+ 
++// before a reconfiguration the design closes every transaction on its HP ports: an open one
++// stays in the AFI of the port and hangs the next design. A design
++// without CTRL never reports idle: the wait then gives the core time to finish what the core
++// reset started (MSX clears its memory over HP0)
++static void zynq_quiesce()
++{
++	map_base[ZYNQ_REG_STATUS] = ZYNQ_CTRL_QUIESCE;
++	for (int i = 0; i < 200; i++)
++	{
++		if (map_base[ZYNQ_REG_STATUS] & ZYNQ_STATUS_IDLE)
++		{
++			printf("PL quiesced after %d ms\n", i);
++			return;
++		}
++		usleep(1000);
++	}
++	printf("PL did not report idle (design without quiesce)\n");
++}
++
+ // full configuration through the fpga_manager: the payload is a byte-swapped Xilinx .bin
+ // (bootgen -process_bitstream bin), handed over as firmware file in /lib/firmware
+ static int zynq_load(const void *data, size_t size)
+@@ -92,6 +114,8 @@
+ 	close(fd);
+ 	if (n != (ssize_t)size) return -2;
+ 
++	if (pl_ok) zynq_quiesce();
++
+ 	// no GP0 access from here until the new design answers
+ 	pl_ok = 0;
+ 	if (!zynq_sysfs_write("flags", "0") || !zynq_sysfs_write("firmware", ZYNQ_FW_NAME)) return -3;

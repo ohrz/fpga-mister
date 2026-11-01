@@ -1,0 +1,33 @@
+# ----------------------------------------------------------------------------------
+#  Title      : Main_MiSTer as a systemd service
+#  Project    : fpga-mister
+#  File       : mister.service (/etc/systemd/system)
+#  Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+#  Company    : OHRZ
+#  Created    : 2026-10-28
+# ----------------------------------------------------------------------------------
+#  Description: Starts /media/fat/MiSTer (FAT partition of the card) as root (/dev/mem, /dev/uinput, fpga_manager).
+#               Main_MiSTer restarts itself after every core load with a double fork
+#               (app_restart): ExitType=cgroup keeps the service running as long as one
+#               process of it lives, Restart=on-failure starts it again when none is left.
+# ----------------------------------------------------------------------------------
+#  Copyright (c) 2026 by OHRZ
+# ----------------------------------------------------------------------------------
+
+[Unit]
+Description=MiSTer main application (Main_MiSTer)
+ConditionPathExists=/media/fat/MiSTer
+Requires=usr-lib-firmware-mister.mount
+RequiresMountsFor=/media/fat
+After=usr-lib-firmware-mister.mount local-fs.target
+
+[Service]
+Type=simple
+ExitType=cgroup
+WorkingDirectory=/media/fat
+ExecStart=/media/fat/MiSTer
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

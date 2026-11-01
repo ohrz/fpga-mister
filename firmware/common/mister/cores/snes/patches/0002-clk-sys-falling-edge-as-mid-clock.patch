@@ -1,0 +1,166 @@
+Title      : clk_sys falling edge as its own clock (CLK_MID)
+Project    : fpga-mister (patch for SNES_MiSTer bdcd33c, after 0001)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-30
+Description:
+  On the Zynq the core clocks are pulses of the gated master clock (BUFGCE):
+  clk_sys is high for one master high time (5.6 ns), not half its period
+  (23 ns on the DE10).  Logic at the falling edge of clk_sys got 5.6 ns from
+  the rising edge (Vivado WNS -5.1 ns).  The core profile adds CLK_MID, a
+  pulse at the master pulse where the DE10 clk_sys falls (the 2nd clk_mem
+  pulse of every clk_sys period, cores/snes/pll.vhd), and every falling
+  edge of clk_sys becomes a rising edge of CLK_MID:
+    CEGen (DSP, DSP_LHRomMap, CX4Map; msu_audio by rules.py), the four
+    falling-edge processes and the cache RAM of GSU, the two RAMs of CX4
+    (clock => not CLK).
+  The order of all edges stays as on the DE10, also while the core is
+  stalled.  New ports CLK_MID/MCLK_MID/DSPCLK_MID, wired by rules.py in
+  rtl/main.v and SNES.sv.
+  One line of context (git diff -U1): prepare_sources.py rewrites the .mif
+  path in the line before the CX4 DATA_ROM clock.
+diff --git a/rtl/CEGen.vhd b/rtl/CEGen.vhd
+index 37d74c4..62b50f3 100644
+--- a/rtl/CEGen.vhd
++++ b/rtl/CEGen.vhd
+@@ -24,3 +24,3 @@ BEGIN
+ 			CE <= '0';
+-		elsif falling_edge(CLK) then
++		elsif rising_edge(CLK) then
+ 			CE <= '0';
+diff --git a/rtl/DSP.vhd b/rtl/DSP.vhd
+index 11e86c0..2f33700 100644
+--- a/rtl/DSP.vhd
++++ b/rtl/DSP.vhd
+@@ -11,2 +11,3 @@ entity DSP is
+ 		CLK 			: in std_logic;
++		CLK_MID		: in std_logic;  -- fpga-mister: clk_sys falling edge as its own clock
+ 		RST_N 		: in std_logic; 
+@@ -243,3 +244,3 @@ begin
+ 	port map(
+-		CLK      => CLK,
++		CLK      => CLK_MID,
+ 		RST_N    => CEGEN_RST_N,
+diff --git a/rtl/SNES.vhd b/rtl/SNES.vhd
+index d24e180..86f9316 100644
+--- a/rtl/SNES.vhd
++++ b/rtl/SNES.vhd
+@@ -12,2 +12,3 @@ entity SNES is
+ 		DSPCLK		: in std_logic;
++		DSPCLK_MID	: in std_logic;  -- fpga-mister: clk_sys falling edge as its own clock
+ 		
+@@ -410,2 +411,3 @@ begin
+ 		CLK			=> DSPCLK,
++		CLK_MID		=> DSPCLK_MID,
+ 		RST_N			=> RST_N,
+diff --git a/rtl/chip/CX4/CX4.vhd b/rtl/chip/CX4/CX4.vhd
+index 62c8724..cfbd351 100644
+--- a/rtl/chip/CX4/CX4.vhd
++++ b/rtl/chip/CX4/CX4.vhd
+@@ -9,2 +9,3 @@ entity CX4 is
+ 		CLK			: in std_logic;
++		CLK_MID		: in std_logic;  -- fpga-mister: clk_sys falling edge as its own clock
+ 		CE				: in std_logic;
+@@ -1429,3 +1430,3 @@ begin
+ 	port map(
+-		clock		=> not CLK,
++		clock		=> CLK_MID,
+ 		address	=> DATA_ROM_ADDR,
+@@ -1442,3 +1443,3 @@ begin
+ 	port map(
+-		clock0		=> not CLK,
++		clock0		=> CLK_MID,
+ 		address_a	=> DATA_RAM_ADDR_A,
+diff --git a/rtl/chip/CX4/CX4Map.vhd b/rtl/chip/CX4/CX4Map.vhd
+index 10e89aa..1e79c08 100644
+--- a/rtl/chip/CX4/CX4Map.vhd
++++ b/rtl/chip/CX4/CX4Map.vhd
+@@ -11,2 +11,3 @@ entity CX4Map is
+ 		MCLK			: in std_logic;
++		MCLK_MID		: in std_logic;  -- fpga-mister: clk_sys falling edge as its own clock
+ 		RST_N			: in std_logic;
+@@ -80,3 +81,3 @@ begin
+ 	port map(
+-		CLK     => MCLK,
++		CLK     => MCLK_MID,
+ 		RST_N   => RST_N,
+@@ -90,2 +91,3 @@ begin
+ 		CLK			=> MCLK,
++		CLK_MID		=> MCLK_MID,
+ 		CE				=> CX4_CE,
+diff --git a/rtl/chip/DSP/DSP_LHRomMap.vhd b/rtl/chip/DSP/DSP_LHRomMap.vhd
+index e70999e..7592aa6 100644
+--- a/rtl/chip/DSP/DSP_LHRomMap.vhd
++++ b/rtl/chip/DSP/DSP_LHRomMap.vhd
+@@ -14,2 +14,3 @@ entity DSP_LHRomMap is
+ 		MCLK			: in std_logic;
++		MCLK_MID		: in std_logic;  -- fpga-mister: clk_sys falling edge as its own clock
+ 		RST_N			: in std_logic;
+@@ -116,3 +117,3 @@ begin
+ 	port map(
+-		CLK     => MCLK,
++		CLK     => MCLK_MID,
+ 		RST_N   => RST_N,
+diff --git a/rtl/chip/GSU/GSU.vhd b/rtl/chip/GSU/GSU.vhd
+index 4ca7af9..9c94175 100644
+--- a/rtl/chip/GSU/GSU.vhd
++++ b/rtl/chip/GSU/GSU.vhd
+@@ -10,2 +10,3 @@ entity GSU is
+ 		CLK			: in std_logic;
++		CLK_MID		: in std_logic;  -- fpga-mister: clk_sys falling edge as its own clock
+ 
+@@ -481,5 +482,5 @@ begin
+ 		
+-	process(CLK)
++	process(CLK_MID)
+ 	begin
+-		if falling_edge(CLK) then
++		if rising_edge(CLK_MID) then
+ 			EN <= ENABLE and FLAG_GO and CLK_CE;
+@@ -609,3 +610,3 @@ begin
+ 	port map(
+-		clock0		=> not CLK,
++		clock0		=> CLK_MID,
+ 		address_a	=> BRAM_CACHE_ADDR_A,
+@@ -960,3 +961,3 @@ begin
+ 	
+-	process(CLK, RST_N)
++	process(CLK_MID, RST_N)
+ 	begin
+@@ -964,3 +965,3 @@ begin
+ 			MULT_WAIT <= '0';
+-		elsif falling_edge(CLK) then
++		elsif rising_edge(CLK_MID) then
+ 			if EN = '1' then
+@@ -1029,3 +1030,3 @@ begin
+ 	R14_CHANGE <= '1' when DST_REG = 14 and (MC.DREG(1) = '1' or MC.DREG(0) = '1') and MC.LAST_CYCLE = '1' else '0';
+-	process(CLK, RST_N)
++	process(CLK_MID, RST_N)
+ 	variable ROM_CYCLES : unsigned(2 downto 0);
+@@ -1040,3 +1041,3 @@ begin
+ 			ROM_CACHE_EN <= '0';
+-		elsif falling_edge(CLK) then
++		elsif rising_edge(CLK_MID) then
+ 			if GO = '1' then
+@@ -1306,3 +1307,3 @@ begin
+ 			
+-	process(CLK, RST_N)
++	process(CLK_MID, RST_N)
+ 		variable RAM_LOAD_WORD : std_logic;
+@@ -1324,3 +1325,3 @@ begin
+ 			RAM_CACHE_WAIT <= '0';
+-		elsif falling_edge(CLK) then
++		elsif rising_edge(CLK_MID) then
+ 			if GO = '1' then
+diff --git a/rtl/chip/GSU/GSUMap.vhd b/rtl/chip/GSU/GSUMap.vhd
+index da637d8..2f4355c 100644
+--- a/rtl/chip/GSU/GSUMap.vhd
++++ b/rtl/chip/GSU/GSUMap.vhd
+@@ -11,2 +11,3 @@ entity GSUMap is
+ 		MCLK			: in std_logic;
++		MCLK_MID		: in std_logic;  -- fpga-mister: clk_sys falling edge as its own clock
+ 		RST_N			: in std_logic;
+@@ -75,2 +76,3 @@ begin
+ 		CLK			=> MCLK,
++		CLK_MID		=> MCLK_MID,
+ 		RST_N			=> RST_N and MAP_SEL,

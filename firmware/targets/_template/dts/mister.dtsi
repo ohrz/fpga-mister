@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: GPL-2.0+
+/*
+ * TEMPLATE (firmware/targets/_template): the nodes the MiSTer part needs in the board DTS
+ * (dts/<dts name>.dts, KERNEL_DTS_FILES / UBOOT_DTS_FILES of platform.mk), taken from
+ * zybo-z7-20/dts/zynq-zybo-z7.dts; copy them into the board DTS.
+ *
+ * The upper 512 MB of the first GB of DDR belong to the PL (AXI HP ports): SDRAM image of the
+ * cores at 0x3800_0000 (G_SDRAM_BASE), ascal frame buffer at 0x2000_0000, Linux frame buffer of
+ * Main_MiSTer at 0x2200_0000, ROM load areas from 0x3000_0000 (doc/ARCHITECTURE.md §2).
+ * Main_MiSTer also uses the hand-over page 0x1FFF_F000 below it (core switch), so the
+ * reservation starts at 0x1FF0_0000; Main_MiSTer maps the region through /dev/mem.
+ * Needs DDR at physical 0 of at least 1 GB (open: boards with less DDR or another base).
+ */
+/ {
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		mister_pl_ddr: mister@1ff00000 {
+			reg = <0x1ff00000 0x20100000>;
+			no-map;
+		};
+	};
+
+	chosen {
+		bootargs = "earlycon cma=64M uio_pdrv_genirq.of_id=generic-uio";
+		stdout-path = "serial0:115200n8";	/* TODO console of the board */
+	};
+};
+
+&clkc {
+	/* FCLK0 (100 MHz) clocks the whole MiSTer design (MMCMs, AXI-Lite, HP1) but no Linux
+	 * driver uses it: without this, clk_disable_unused stops it at the end of the boot.
+	 * Zynq-7000 clkc; TODO ZynqMP: pl_clk0 is kept by other means (open) */
+	fclk-enable = <0x1>;
+};

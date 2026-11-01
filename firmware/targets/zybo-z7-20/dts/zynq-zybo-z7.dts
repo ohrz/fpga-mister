@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: GPL-2.0+
+/dts-v1/;
+#include "zynq-7000.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	model = "Digilent Zybo Z7 board";
+	compatible = "digilent,zynq-zybo-z7", "xlnx,zynq-7000";
+
+	aliases {
+		ethernet0 = &gem0;
+		serial0 = &uart1;
+		i2c0 = &i2c0;
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x0 0x40000000>;
+	};
+
+	/*
+	 * MiSTer: the upper 512 MB of the DDR belong to the PL (AXI HP ports): SDRAM replacement of
+	 * the cores, scaler frame buffers, the menu frame buffer of Main_MiSTer (doc/ARCHITECTURE.md).
+	 * Main_MiSTer also uses the hand-over page 0x1FFF_F000 below it (core switch), so the
+	 * reservation starts at 0x1FF0_0000; Main_MiSTer maps the region through /dev/mem.
+	 */
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		mister_pl_ddr: mister@1ff00000 {
+			reg = <0x1ff00000 0x20100000>;
+			no-map;
+		};
+	};
+
+	chosen {
+		bootargs = "earlycon cma=64M uio_pdrv_genirq.of_id=generic-uio";
+		stdout-path = "serial0:115200n8";
+	};
+
+	gpio-leds {
+		compatible = "gpio-leds","generic-uio";
+
+		led-ld4 {
+			label = "zynq-zybo-z7:green:ld4";
+			gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	usb_phy0: phy0 {
+		#phy-cells = <0>;
+		compatible = "usb-nop-xceiv";
+		reset-gpios = <&gpio0 46 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&clkc {
+	ps-clk-frequency = <33333333>;
+	/* FCLK0 (100 MHz) clocks the whole MiSTer design (MMCMs, AXI-Lite, HP1) but no Linux
+	 * driver uses it: without this, clk_disable_unused stops it at the end of the boot */
+	fclk-enable = <0x1>;
+};
+
+&gem0 {
+	status = "okay";
+	phy-mode = "rgmii-id";
+	phy-handle = <&ethernet_phy>;
+	local-mac-address = [00 0a 35 00 00 00];
+	ethernet_phy: ethernet-phy@0 {
+		reg = <0>;
+	};
+};
+
+/*
+ * PS I2C0 on EMIO: the PL designs route it to the audio codec SSM2603 (address 0x1a, pins N18/N17 of
+ * zybo-z7-20_*.xdc). No codec node: the PL is the I2S master, there is no Linux sound card; the codec is
+ * configured from user space over /dev/i2c-0 (ssm2603-init.service). Works only with a PL design that
+ * has the EMIO pins.
+ */
+&i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+};
+
+&sdhci0 {
+	status = "okay";
+};
+
+&uart1 {
+	status = "okay";
+};
+
+&usb0 {
+	status = "okay";
+	dr_mode = "host";
+	usb-phy = <&usb_phy0>;
+};

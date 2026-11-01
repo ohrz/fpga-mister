@@ -1,0 +1,31 @@
+Title      : gpu_poly: compare the left edge with drawingAreaRight as integers
+Project    : fpga-mister (patch for PSX_MiSTer cd17b5a)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-31
+Description:
+  PREPARELINE skips a scanline when its left edge lies right of the drawing
+  area: to_integer(xStart(43 downto 32)) > drawingAreaRight.  The left side
+  is a signed integer, the right side an unsigned, so numeric_std's
+  ">"(L : NATURAL; R : UNSIGNED) is chosen.  For a left edge < 0 (a polygon
+  that starts left of x = 0, common for background polygons) the NATURAL
+  argument is out of range: GHDL stops, Vivado synthesizes a compare that
+  is TRUE, and the whole scanline is skipped.  In Crash Bandicoot 3 the
+  background polygons on the left of the picture vanish in the frame buffer
+  at x 0..511 and are drawn in the one at 512..1023: they flicker at the
+  frame rate.  Comparing two integers gives the intended result.
+  Checked with a Vivado funcsim netlist of gpu_poly against the RTL (xsim,
+  random polygons with negative left edges, every output in every cycle):
+  original netlist differs (fewer pixels, the left columns are missing),
+  patched netlist identical.
+--- a/rtl/gpu_poly.vhd	2026-10-31 13:15:36.392676541 +0100
++++ b/rtl/gpu_poly.vhd	2026-10-31 13:15:36.393710568 +0100
+@@ -1013,7 +1013,7 @@
+                      skip := '1';
+                   end if;
+                   
+-                  if (to_integer(xStart(43 downto 32)) > drawingAreaRight) then
++                  if (to_integer(xStart(43 downto 32)) > to_integer(drawingAreaRight)) then
+                      skip := '1';
+                   end if;                  
+                   

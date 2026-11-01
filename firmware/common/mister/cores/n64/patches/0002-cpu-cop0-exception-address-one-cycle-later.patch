@@ -1,0 +1,230 @@
+Title      : cpu_cop0: exception address written one cycle later from registers
+Project    : fpga-mister (patch for N64_MiSTer 5725381)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-31
+Description:
+  On an address error or TLB exception COP0 writes the faulting address to
+  BadVAddr, EntryHi (VPN, region), Context BadVPN and XContext.  The write
+  enable comes from exception3 (exceptionNew3 of cpu.vhd, combinational from
+  the memory address adder) and fans out to ~250 flip-flops; with the address
+  mux behind it these were ~190 of the failing CPU endpoints at 93.75 MHz on
+  the xc7z020 (BadVAddr -1.350 ns after patch 0001).
+  The address (from registers and exceptionNewPC only: the select by
+  exception3 matters only with the write enable set, where the order of the
+  TLB selects gives the same value) and the enable are now registered and
+  written at the start of the next ce cycle, before every other write of the
+  process, so MTC0, TLBR and a new exception still win as before; a TLBR in
+  the same cycle as the exception (which won in the original) cancels the
+  pending EntryHi part.  Every reader of these fields (readValue, the TLBP
+  compare, the TLBWI/TLBWR write data, cop0_export) sees the pending value,
+  so all outputs are the same in every cycle for any input sequence.  Bench
+  n64_cop0_diff_tb (original against patched entity, all outputs and all
+  exported COP0 registers twice per cycle, random stimulus without pipeline
+  rules).
+--- a/rtl/cpu_cop0.vhd	2026-10-31 19:28:54.859249399 +0100
++++ b/rtl/cpu_cop0.vhd	2026-10-31 19:28:54.867263185 +0100
+@@ -169,6 +169,18 @@
+    signal COP0_20_XCONTEXT_PTE            : unsigned(30 downto 0) := (others => '0');
+    signal COP0_20_XCONTEXT_Region         : unsigned(1 downto 0) := (others => '0');
+    signal COP0_20_XCONTEXT_BadVPN         : unsigned(26 downto 0) := (others => '0');
++   
++   -- fpga-mister: the exception address (BadVAddr, Context/XContext BadVPN, EntryHi VPN/region) is written one
++   -- cycle later from registers (timing); readers see the pending value (eff_*), so every output is the same
++   signal excW_pend                       : std_logic := '0';                      -- BadVAddr, Context, XContext
++   signal excW_pendHi                     : std_logic := '0';                      -- EntryHi (TLBR cancels it)
++   signal excW_addr                       : unsigned(63 downto 0) := (others => '0');
++   signal eff_BADVIRTUALADDRESS           : unsigned(63 downto 0);
++   signal eff_CONTEXT_BADVPN              : unsigned(18 downto 0);
++   signal eff_ENTRYHI_virtualAddress      : unsigned(26 downto 0);
++   signal eff_ENTRYHI_region              : unsigned(1 downto 0);
++   signal eff_XCONTEXT_Region             : unsigned(1 downto 0);
++   signal eff_XCONTEXT_BadVPN             : unsigned(26 downto 0);
+    signal COP0_26_PARITYERROR             : unsigned(7 downto 0) := (others => '0');  
+    signal COP0_28_TAGLO_primaryCacheState : unsigned(1 downto 0) := (others => '0');     
+    signal COP0_28_TAGLO_physicalAddress   : unsigned(19 downto 0) := (others => '0');     
+@@ -338,6 +350,13 @@
+    TagLo_Dirty   <= COP0_28_TAGLO_primaryCacheState(0);
+    TagLo_Addr    <= COP0_28_TAGLO_physicalAddress;
+    
++   eff_BADVIRTUALADDRESS      <= excW_addr                 when (excW_pend = '1')   else COP0_8_BADVIRTUALADDRESS;
++   eff_CONTEXT_BADVPN         <= excW_addr(31 downto 13)   when (excW_pend = '1')   else COP0_4_CONTEXT_BADVPN;
++   eff_XCONTEXT_Region        <= excW_addr(63 downto 62)   when (excW_pend = '1')   else COP0_20_XCONTEXT_Region;
++   eff_XCONTEXT_BadVPN        <= excW_addr(39 downto 13)   when (excW_pend = '1')   else COP0_20_XCONTEXT_BadVPN;
++   eff_ENTRYHI_virtualAddress <= excW_addr(39 downto 13)   when (excW_pendHi = '1') else COP0_10_ENTRYHI_virtualAddress;
++   eff_ENTRYHI_region         <= excW_addr(63 downto 62)   when (excW_pendHi = '1') else COP0_10_ENTRYHI_region;
++
+    process (all)
+    begin
+    
+@@ -380,19 +399,19 @@
+          
+          when 4 => 
+             readValue(63 downto 23) <= COP0_4_CONTEXT_PTE;
+-            readValue(22 downto  4) <= COP0_4_CONTEXT_BADVPN;
++            readValue(22 downto  4) <= eff_CONTEXT_BADVPN;
+             readValue( 3 downto  0) <= (others => '0');
+             
+             
+          when 5 => readValue(24 downto 13) <= COP0_5_PAGEMASK;
+          when 6 => readValue(5 downto 0)   <= COP0_6_WIRED;
+-         when 8 => readValue               <= COP0_8_BADVIRTUALADDRESS;
++         when 8 => readValue               <= eff_BADVIRTUALADDRESS;
+          when 9 => readValue(31 downto 0)  <= COP0_9_COUNT(32 downto 1);
+          
+          when 10 =>
+             readValue(7 downto 0)          <= COP0_10_ENTRYHI_addressSpaceID;
+-            readValue(39 downto 13)        <= COP0_10_ENTRYHI_virtualAddress;
+-            readValue(63 downto 62)        <= COP0_10_ENTRYHI_region;
++            readValue(39 downto 13)        <= eff_ENTRYHI_virtualAddress;
++            readValue(63 downto 62)        <= eff_ENTRYHI_region;
+ 
+          when 11 => readValue(31 downto 0)  <= COP0_11_COMPARE;
+          
+@@ -445,8 +464,8 @@
+          
+          when 20 => 
+             readValue(63 downto 33) <= COP0_20_XCONTEXT_PTE;    
+-            readValue(32 downto 31) <= COP0_20_XCONTEXT_Region;    
+-            readValue(30 downto  4) <= COP0_20_XCONTEXT_BadVPN;    
++            readValue(32 downto 31) <= eff_XCONTEXT_Region;    
++            readValue(30 downto  4) <= eff_XCONTEXT_BadVPN;    
+             
+          when 26 => readValue(7 downto 0) <= COP0_26_PARITYERROR;       
+ 
+@@ -469,6 +488,7 @@
+       variable mode        : unsigned(1 downto 0); 
+       variable nextEPC     : unsigned(63 downto 0);
+       variable excAddr     : unsigned(63 downto 0);   
++      variable excAddrD    : unsigned(63 downto 0);
+       variable excAddrWE   : std_logic;   
+    begin
+       if (rising_edge(clk93)) then
+@@ -588,6 +608,8 @@
+             COP0_20_XCONTEXT_PTE            <= (others => '0');
+             COP0_20_XCONTEXT_Region         <= (others => '0');
+             COP0_20_XCONTEXT_BadVPN         <= (others => '0');
++            excW_pend                       <= '0';
++            excW_pendHi                     <= '0';
+             COP0_26_PARITYERROR             <= (others => '0');  
+             COP0_28_TAGLO_primaryCacheState <= (others => '0');     
+             COP0_28_TAGLO_physicalAddress   <= (others => '0');     
+@@ -610,6 +632,20 @@
+             
+          elsif (ce = '1') then
+          
++            -- fpga-mister: exception address of the previous cycle; every later write below wins, as it did
++            if (excW_pend = '1') then
++               COP0_8_BADVIRTUALADDRESS       <= excW_addr;
++               COP0_4_CONTEXT_BADVPN          <= excW_addr(31 downto 13);
++               COP0_20_XCONTEXT_Region        <= excW_addr(63 downto 62);
++               COP0_20_XCONTEXT_BadVPN        <= excW_addr(39 downto 13);
++            end if;
++            if (excW_pendHi = '1') then
++               COP0_10_ENTRYHI_virtualAddress <= excW_addr(39 downto 13);
++               COP0_10_ENTRYHI_region         <= excW_addr(63 downto 62);
++            end if;
++            excW_pend   <= '0';
++            excW_pendHi <= '0';
++         
+             -- interrupt
+             COP0_13_CAUSE_interruptPending(2) <= irqRequest;
+             COP0_13_CAUSE_interruptPending(3) <= irqCartRequest;
+@@ -890,16 +926,22 @@
+                excAddr   := TLB_Instr_fetchAddrIn; 
+             end if;
+ 
++            -- fpga-mister: written in the next cycle (above), the address from registers only: the select by
++            -- exception3 is dropped, it only matters with excAddrWE = '1', where the order below gives the same
++            excAddrD := TLB_dataAddrIn;
++            if (exceptionNewPC = '1') then
++               excAddrD := exceptionPCStore;
++            end if;
++            if (TLB_ExcDataRead = '1' or TLB_ExcDataWrite = '1' or TLB_ExcDataDirty = '1') then
++               excAddrD := TLB_Data_fetchAddrIn;
++            end if;
++            if (TLB_ExcInstrRead = '1') then
++               excAddrD := TLB_Instr_fetchAddrIn;
++            end if;
++            excW_addr <= excAddrD;
+             if (excAddrWE = '1') then
+-               COP0_8_BADVIRTUALADDRESS       <= excAddr;
+-               
+-               COP0_10_ENTRYHI_virtualAddress <= excAddr(39 downto 13);
+-               COP0_10_ENTRYHI_region         <= excAddr(63 downto 62);
+-               
+-               COP0_4_CONTEXT_BADVPN          <= excAddr(31 downto 13);
+-               
+-               COP0_20_XCONTEXT_Region        <= excAddr(63 downto 62);
+-               COP0_20_XCONTEXT_BadVPN        <= excAddr(39 downto 13);
++               excW_pend   <= '1';
++               excW_pendHi <= '1';
+             end if;
+             
+             -- tlb
+@@ -935,6 +977,7 @@
+                      COP0_10_ENTRYHI_virtualAddress <= TLBREAD_virtAddr;
+                      COP0_10_ENTRYHI_addressSpaceID <= TLBREAD_ASID;
+                      COP0_10_ENTRYHI_region         <= TLBREAD_region;
++                     excW_pendHi                    <= '0'; -- fpga-mister: TLBR wins over the exception
+                   
+                   elsif (exception = '0' and stall4Masked = 0 and executeNew = '1' and (TLBWI = '1' or TLBWR = '1')) then
+                      null;
+@@ -971,8 +1014,8 @@
+                      COP0_0_INDEX_tlbEntry     <= (others => '0');
+                      TLBDone                   <= '1';
+                   end if;
+-                  if ((COP0_10_ENTRYHI_virtualAddress and TLB_checkMask) = (TLBREAD_virtAddr and TLB_checkMask)) then
+-                     if (COP0_10_ENTRYHI_region = TLBREAD_region) then
++                  if ((eff_ENTRYHI_virtualAddress and TLB_checkMask) = (TLBREAD_virtAddr and TLB_checkMask)) then
++                     if (eff_ENTRYHI_region = TLBREAD_region) then
+                         if (TLBREAD_global = '1' or (COP0_10_ENTRYHI_addressSpaceID = TLBREAD_ASID)) then
+                            TLBState                  <= TLBIDLE;
+                            COP0_0_INDEX_probefailure <= '0';
+@@ -1122,10 +1165,10 @@
+    TLBWRITE_phyAddr1 <= COP0_3_ENTRYLO1_phyAdr(19 downto 0);
+    TLBWRITE_pageMask <= COP0_5_PAGEMASK(11) & COP0_5_PAGEMASK(11) & COP0_5_PAGEMASK(9) & COP0_5_PAGEMASK(9) & COP0_5_PAGEMASK(7) & COP0_5_PAGEMASK(7) &
+                         COP0_5_PAGEMASK(5)  & COP0_5_PAGEMASK(5)  & COP0_5_PAGEMASK(3) & COP0_5_PAGEMASK(3) & COP0_5_PAGEMASK(1) & COP0_5_PAGEMASK(1);
+-   TLBWRITE_virtAddr(26 downto 12) <= COP0_10_ENTRYHI_virtualAddress(26 downto 12);
+-   TLBWRITE_virtAddr(11 downto  0) <= COP0_10_ENTRYHI_virtualAddress(11 downto 0) and (not TLBWRITE_pageMask);
++   TLBWRITE_virtAddr(26 downto 12) <= eff_ENTRYHI_virtualAddress(26 downto 12);
++   TLBWRITE_virtAddr(11 downto  0) <= eff_ENTRYHI_virtualAddress(11 downto 0) and (not TLBWRITE_pageMask);
+    TLBWRITE_ASID     <= COP0_10_ENTRYHI_addressSpaceID;
+-   TLBWRITE_region   <= COP0_10_ENTRYHI_region;
++   TLBWRITE_region   <= eff_ENTRYHI_region;
+    TLBWRITE_random   <= TLBWR;
+    
+    TLBMEM_writeData(0)            <= TLBINIT_global    when (TLB_init = '1') else TLBWRITE_global;  
+@@ -1328,17 +1371,17 @@
+    cop0_export(3)(0)             <= COP0_3_ENTRYLO1_global;
+    
+    cop0_export(4)(63 downto 23)  <= COP0_4_CONTEXT_PTE;
+-   cop0_export(4)(22 downto  4)  <= COP0_4_CONTEXT_BADVPN;
++   cop0_export(4)(22 downto  4)  <= eff_CONTEXT_BADVPN;
+    cop0_export(4)( 3 downto  0)  <= (others => '0');
+    
+    cop0_export(5)(24 downto 13)  <= COP0_5_PAGEMASK;
+    cop0_export(6)(5 downto 0)    <= COP0_6_WIRED;
+-   cop0_export(8)                <= COP0_8_BADVIRTUALADDRESS;
++   cop0_export(8)                <= eff_BADVIRTUALADDRESS;
+    cop0_export(9)(31 downto 0)   <= COP0_9_COUNT(32 downto 1);
+    
+    cop0_export(10)(7 downto 0)   <= COP0_10_ENTRYHI_addressSpaceID;
+-   cop0_export(10)(39 downto 13) <= COP0_10_ENTRYHI_virtualAddress;
+-   cop0_export(10)(63 downto 62) <= COP0_10_ENTRYHI_region;
++   cop0_export(10)(39 downto 13) <= eff_ENTRYHI_virtualAddress;
++   cop0_export(10)(63 downto 62) <= eff_ENTRYHI_region;
+    
+    cop0_export(11)(31 downto 0)  <= COP0_11_COMPARE;
+    
+@@ -1386,8 +1429,8 @@
+    cop0_export(19)(3 downto 0)   <= COP0_19_WATCHHI;    
+    
+    cop0_export(20)(63 downto 33) <= COP0_20_XCONTEXT_PTE;    
+-   cop0_export(20)(32 downto 31) <= COP0_20_XCONTEXT_Region;    
+-   cop0_export(20)(30 downto  4) <= COP0_20_XCONTEXT_BadVPN;   
++   cop0_export(20)(32 downto 31) <= eff_XCONTEXT_Region;    
++   cop0_export(20)(30 downto  4) <= eff_XCONTEXT_BadVPN;   
+    
+    cop0_export(26)(7 downto 0)   <= COP0_26_PARITYERROR;       
+    

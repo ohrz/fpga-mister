@@ -1,0 +1,70 @@
+########################################################################
+# Zybo Z7-20 uEnv.txt (@...@: filled in by FLOW=boot make copy)
+#
+# Boot menu (10 s, default SD):
+#   SD Boot        zImage + DTB from partition 1, rootfs on partition 2
+#   TFTP/NFS Boot  zImage + DTB from @TFTP_SERVER_IP@:@TFTP_DIR@/ (FLOW=boot make tftpboot),
+#                  rootfs over NFS (@NFS_ROOT@)
+# With BOOT_NETBOOT=0 (SD card image of a release) FLOW=boot make copy removes the menu and
+# the network entries: uenvcmd boots the SD card at once.
+# U-Boot prompt: press a key at "Hit any key to stop autoboot" (before the menu).
+########################################################################
+
+########################################################################
+# Linux Kernel Files (SD partition 1 and TFTP server use the same names)
+########################################################################
+linux_kernel_image=zImage
+linux_fdt_image=zynq-zybo-z7.dtb
+
+# Network boot: board and server addresses
+serverip=@TFTP_SERVER_IP@
+ipaddr=@BOARD_IP@
+netmask=@NET_MASK@
+gatewayip=@NET_GATEWAY@
+nfs_root_file=@NFS_ROOT@
+
+# sets nfs_path with the addresses expanded
+set_nfs_args=setenv nfs_path root=/dev/nfs rw nfsroot=${serverip}:${nfs_root_file},v3,tcp ip=${ipaddr}:${serverip}:@NET_GATEWAY@:@NET_MASK@:@BOARD_HOSTNAME@:eth0:off
+
+########################################################################
+# Linux Boot Arguments
+#  * linux_boot_args_console : ex) console=ttyPS0,115200
+#  * linux_boot_args_rootfs  : ex) root=/dev/mmcblk0p2 rw rootwait (SD Boot only)
+#  * linux_boot_args_systemd : ex) systemd.unit=multi-user.target
+#  * linux_boot_args_cpuidle : ex) cpuidle.off=1
+#  * linux_boot_args_cma     : ex) cma=64M (the upper 512 MB of the DDR are reserved for the PL, DTS)
+#  * linux_boot_args_uio     : ex) uio_pdrv_genirq.of_id=generic-uio
+#  * linux_boot_args_other   : ex) net.ifnames=0
+# net.ifnames=0: kernel interface name eth0 for the PS GEM, independent of the rootfs;
+# without it systemd renames it to end0
+########################################################################
+linux_boot_args_console=console=ttyPS0,115200
+linux_boot_args_rootfs=root=/dev/mmcblk0p2 rw rootwait
+linux_boot_args_systemd=systemd.unit=multi-user.target
+linux_boot_args_cpuidle=cpuidle.off=1
+linux_boot_args_cma=cma=64M
+linux_boot_args_uio=uio_pdrv_genirq.of_id=generic-uio
+linux_boot_args_other=net.ifnames=0
+
+########################################################################
+# Commands
+########################################################################
+linux_boot_cmd=bootz 0x00200000 - 0x00100000
+sd_load=fatload ${devtype} ${devnum}:${distro_bootpart} 0x00200000 ${linux_kernel_image} && fatload ${devtype} ${devnum}:${distro_bootpart} 0x00100000 ${linux_fdt_image}
+# TFTP files in the board's directory /srv/tftp/@TFTP_DIR@ (FLOW=boot make tftpboot)
+tftp_dir=@TFTP_DIR@
+net_load=tftpboot 0x00200000 ${tftp_dir}/${linux_kernel_image} && tftpboot 0x00100000 ${tftp_dir}/${linux_fdt_image}
+
+args_sd=setenv bootargs ${linux_boot_args_console} ${linux_boot_args_rootfs} ${linux_boot_args_systemd} ${linux_boot_args_cpuidle} ${linux_boot_args_cma} ${linux_boot_args_uio} ${linux_boot_args_other}
+args_net=run set_nfs_args; setenv bootargs ${linux_boot_args_console} ${nfs_path} ${linux_boot_args_systemd} ${linux_boot_args_cpuidle} ${linux_boot_args_cma} ${linux_boot_args_uio} ${linux_boot_args_other}
+
+########################################################################
+# Boot menu (bootmenu of U-Boot).  "Exit"/ESC leaves the menu and boot.scr goes on with its
+# fallback (zImage with the DTB U-Boot started with), not meant for normal use.
+########################################################################
+bootmenu_0=SD Boot - Zybo Z7=run args_sd && run sd_load && run linux_boot_cmd
+bootmenu_1=TFTP/NFS Boot - Zybo Z7 (@TFTP_SERVER_IP@)=run args_net && run net_load && run linux_boot_cmd
+bootmenu_delay=10
+bootmenu_default=0
+
+uenvcmd=bootmenu

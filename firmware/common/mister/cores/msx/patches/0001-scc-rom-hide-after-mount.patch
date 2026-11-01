@@ -1,0 +1,73 @@
+Title      : Hide the ROM in the ESE-SCC of slot 1 after a card is mounted
+Project    : fpga-mister (patch for MSX_MiSTer bb13016)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-29
+Description:
+  ROMLOAD /R loads a game into the RAM of the ESE-SCC (OSD Slot1 = MegaSCC+ 1MB) and
+  resets, the BIOS starts it like a cartridge. That RAM keeps the game over every reset, so
+  after the OSD mounts the card of another game (Reset after Mount) the BIOS started the old
+  game again and MSX-DOS never booted the new card. emsx_top now instantiates scc_rom_hide
+  (firmware/common/mister/cores/msx/scc_rom_hide.vhd): from img_mounted until ROMLOAD writes
+  page 1 of slot 1 after the next reset, the ROM header bytes 4000h/4001h/8000h/8001h of
+  slot 1 read FFh, the BIOS sees no cartridge and boots MSX-DOS from the new card, whose
+  AUTOEXEC.BAT loads and starts the new game. The rest of the ESE-SCC is unchanged.
+diff --git a/MSX.sv b/MSX.sv
+index 6170650..956770d 100644
+--- a/MSX.sv
++++ b/MSX.sv
+@@ -257,6 +257,7 @@ emsx_top emsx
+ 	.memclk(clk_mem),
+ 	.pReset(reset),
+ 	.pColdReset(cold_reset),
++	.pScc1Hide(img_mounted),
+ 
+ 	.pMemCs_n(SDRAM_nCS),
+ 	.pMemRas_n(SDRAM_nRAS),
+diff --git a/rtl/emsx_top.vhd b/rtl/emsx_top.vhd
+index 97b6d00..d22708a 100644
+--- a/rtl/emsx_top.vhd
++++ b/rtl/emsx_top.vhd
+@@ -47,6 +47,7 @@ entity emsx_top is
+         memclk          : in    std_logic;                          -- SDRAM clock .. 85.90908MHz
+         pReset          : in    std_logic;
+         pColdReset      : in    std_logic;
++        pScc1Hide       : in    std_logic := '0';                   -- fpga-mister: a card was mounted
+ 
+         -- SD-RAM ports
+         pMemCke         : out   std_logic;                          -- SD-RAM Clock enable
+@@ -346,6 +347,7 @@ architecture RTL of emsx_top is
+     signal  Scc1Wrt         : std_logic;
+     signal  Scc1Adr         : std_logic_vector( 20 downto 0 );
+     signal  Scc1AmpL        : std_logic_vector( 14 downto 0 );
++    signal  Scc1Hdr         : std_logic;                            -- fpga-mister: ROM header hidden
+ 
+     signal  Scc2Req         : std_logic;
+     signal  Scc2Ack         : std_logic;
+@@ -1211,11 +1213,25 @@ begin
+                 OpllAck     when( OpllReq = '1' )else                   -- OpllAck
+                 req;                                                    -- PsgAck, PpiAck, MapAck, VdpAck, RtcAck, ...
+ 
+-    dbi     <=  Scc1Dbi     when( jSltScc1 = '1' )else
++    dbi     <=  X"FF"       when( jSltScc1 = '1' and Scc1Hdr = '1' )else
++                Scc1Dbi     when( jSltScc1 = '1' )else
+                 Scc2Dbi     when( jSltScc2 = '1' )else
+                 RamDbi      when( jSltMem  = '1' )else
+                 dlydbi;
+ 
++    -- fpga-mister: after a mount the BIOS must not start the ROM that ROMLOAD left in the
++    -- ESE-SCC of slot 1; hidden until ROMLOAD writes the slot again (scc_rom_hide.vhd)
++    U31_H : entity work.scc_rom_hide
++      port map (
++        clk   => clk21m,
++        mount => pScc1Hide,
++        reset => reset,
++        req   => Scc1Req,
++        wrt   => wrt,
++        adr   => adr,
++        mask  => Scc1Hdr
++      );
++
+     ----------------------------------------------------------------
+     -- port F4
+     ----------------------------------------------------------------

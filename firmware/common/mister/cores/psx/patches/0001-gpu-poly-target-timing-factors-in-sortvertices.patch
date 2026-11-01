@@ -1,0 +1,76 @@
+Title      : gpu_poly: targetTiming factors one state earlier
+Project    : fpga-mister (patch for PSX_MiSTer cd17b5a)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-31
+Description:
+  In CALCBOUNDARY1, targetTiming (the drawing time WAITIMING waits for
+  with REPRODUCIBLEGPUTIMING) gets (vt(2).y + 1 - vt(0).y) * xMax * 4 or 2,
+  xMax the largest |x difference| of the three vertices: subtractions,
+  abs, compare, select, multiply and the 32-bit add in one clk2x cycle
+  (21.7 ns against 14.76 ns on the XC7Z020-1).  Both factors do not
+  depend on the order of the vertices: xMax is the largest pairwise x
+  distance, and after the sort vt(2).y - vt(0).y is the largest pairwise
+  y distance (the sort puts the smallest y first and the largest last).
+  So SORTVERTICES, the only state before CALCBOUNDARY1, computes them
+  from the unsorted vt into two registers, and CALCBOUNDARY1 only
+  multiplies and adds.  targetTiming changes at the same edge with the
+  same value as before: no cycle of latency, outputs unchanged
+  (differential GHDL bench tb/gpu_poly_diff_tb.vhd, original against
+  patched, cycle by cycle).
+diff --git a/rtl/gpu_poly.vhd b/rtl/gpu_poly.vhd
+--- a/rtl/gpu_poly.vhd
++++ b/rtl/gpu_poly.vhd
+@@ -121,6 +121,9 @@
+    signal drawTiming          : unsigned(31 downto 0);
+    signal targetTiming        : unsigned(31 downto 0);
+    
++   -- factors of the targetTiming term, registered in SORTVERTICES (fpga-mister timing patch)
++   signal timingSpanX         : integer range 0 to 4095 := 0;
++   signal timingSpanY1        : integer range 1 to 4096 := 1;
+    signal rec_shading         : std_logic := '0';
+    signal rec_quad            : std_logic := '0';
+    signal rec_texture         : std_logic := '0';
+@@ -357,6 +360,7 @@
+       variable yrec12   : signed(11 downto 0);
+       variable cull     : std_logic;    
+       variable xMax     : integer;
++      variable yMax     : integer;
+       variable dx1      : signed(44 downto 0);
+       variable dx2      : signed(44 downto 0);
+       variable dx3      : signed(44 downto 0);
+@@ -602,6 +606,18 @@
+                      vt(2) <= vt(0);
+                   end if; -- 0 1 2 requires no resorting
+                   
++                  -- x and y span of the three vertices for targetTiming in CALCBOUNDARY1: the largest
++                  -- pairwise distance does not depend on the order, and after the sort
++                  -- vt(2).y - vt(0).y is the y span
++                  xMax := abs(vt(0).x - vt(1).x);
++                  if (abs(vt(0).x - vt(2).x) > xMax) then xMax := abs(vt(0).x - vt(2).x); end if;
++                  if (abs(vt(1).x - vt(2).x) > xMax) then xMax := abs(vt(1).x - vt(2).x); end if;
++                  yMax := abs(vt(0).y - vt(1).y);
++                  if (abs(vt(0).y - vt(2).y) > yMax) then yMax := abs(vt(0).y - vt(2).y); end if;
++                  if (abs(vt(1).y - vt(2).y) > yMax) then yMax := abs(vt(1).y - vt(2).y); end if;
++                  timingSpanX  <= xMax;
++                  timingSpanY1 <= yMax + 1;
++                  
+                   if (vt(0).u >= vt(1).u and vt(0).u >= vt(2).u) then 
+                      filter_maxU <= vt(0).u; 
+                   elsif (vt(1).u >= vt(0).u and vt(1).u >= vt(2).u) then 
+@@ -621,13 +637,10 @@
+                when CALCBOUNDARY1 =>
+                   state <= CALCBOUNDARY2;
+                   
+-                  xMax := abs(vt(0).x - vt(1).x);
+-                  if (abs(vt(0).x - vt(2).x) > xMax) then xMax := abs(vt(0).x - vt(2).x); end if;
+-                  if (abs(vt(1).x - vt(2).x) > xMax) then xMax := abs(vt(1).x - vt(2).x); end if;
+                   if (rec_transparency = '1' or rec_texture = '1') then 
+-                     targetTiming <= targetTiming + (vt(2).y + 1 - vt(0).y) * xMax * 4;
++                     targetTiming <= targetTiming + timingSpanY1 * timingSpanX * 4;
+                   else
+-                     targetTiming <= targetTiming + (vt(2).y + 1 - vt(0).y) * xMax * 2;
++                     targetTiming <= targetTiming + timingSpanY1 * timingSpanX * 2;
+                   end if;
+                   
+                   coreVertex <= 0;

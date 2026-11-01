@@ -1,0 +1,28 @@
+# ----------------------------------------------------------------------------------
+#  Title      : Audio codec SSM2603 of the Zybo Z7
+#  Project    : fpga-mister
+#  File       : ssm2603.service (/etc/systemd/system)
+#  Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+#  Company    : OHRZ
+#  Created    : 2026-10-28
+# ----------------------------------------------------------------------------------
+#  Description: Configures the codec once at boot over PS I2C0 (EMIO through the PL:
+#               the boot design loaded by the FSBL must have the codec pins, every
+#               zybo-z7-20 MiSTer design has them). The codec keeps its configuration
+#               when Main_MiSTer loads another core.
+# ----------------------------------------------------------------------------------
+#  Copyright (c) 2026 by OHRZ
+# ----------------------------------------------------------------------------------
+
+[Unit]
+Description=Audio codec SSM2603 (I2S slave of the PL, 48 kHz)
+ConditionPathExists=/dev/i2c-0
+Before=mister.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ssm2603-init.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,28 @@
+Title      : Makefile option ZYNQ=1
+Project    : fpga-mister (patch for Main_MiSTer b57370d)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-10-28
+Description:
+  make ZYNQ=1 BASE=<toolchain prefix> builds for the Zynq-7000 port: -DZYNQ selects the Zynq
+  backend of fpga_io.cpp, -mcpu=cortex-a9 because cross compilers for armhf may default to an
+  older architecture (the Vitis gcc defaults to armv5t).
+
+diff --git a/Makefile b/Makefile
+index 233c5e5..933c41b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -55,6 +55,13 @@ LFLAGS	= -lc -lstdc++ -lm -lrt $(IMLIB2_LIB) -Llib/bluetooth -lbluetooth -lpthre
+ 
+ OUTPUT_FILTER = sed -e 's/\(.[a-zA-Z]\+\):\([0-9]\+\):\([0-9]\+\):/\1(\2,\ \3):/g'
+ 
++# Zynq-7000 port (fpga-mister): make ZYNQ=1 BASE=<toolchain prefix>; the PL bus on GP0 and the
++# Linux fpga_manager replace the Cyclone V HPS registers (fpga_io.cpp); Cortex-A9 with NEON
++ifeq ($(ZYNQ),1)
++	DFLAGS += -DZYNQ
++	CFLAGS += -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard
++endif
++
+ ifneq ($(DEBUG),1)
+ 	CFLAGS += -O3
+ else
