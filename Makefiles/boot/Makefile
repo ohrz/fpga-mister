@@ -69,7 +69,12 @@ BOOT_DIR		:= firmware/build/$(PLATFORM)/$(VIVADO_VER)/boot
 TFTP_SERVER_IP	?= $(LAB_TFTP_SERVER_IP)
 NET_GATEWAY		?= $(LAB_NET_GATEWAY)
 NET_MASK		?= $(LAB_NET_MASK)
-NFS_ROOT		?= $(PWD)/firmware/build/$(PLATFORM)/ubuntu24.04-console-rootfs
+# a copy of the rootfs (setup-nfs): a booted NFS root writes SSH host keys and machine-id, which
+# must not get into the tree the SD card image is made from
+NFS_ROOT		?= $(PWD)/firmware/build/$(PLATFORM)/nfs-rootfs
+NFS_ROOT_SRC	:= firmware/build/$(PLATFORM)/ubuntu24.04-console-rootfs
+# kernel arguments of an NFS boot besides console, root and ip (the board profile: as in its uEnv.txt)
+TFTP_ARGS		?= cma=256M uio_pdrv_genirq.of_id=generic-uio net.ifnames=0
 # directory below /srv/tftp: not just <platform>, other projects may use that one for the same board
 TFTP_DIR		?= mister-$(PLATFORM)
 # host name of the board, the same as in the rootfs (FLOW=rootfs)
@@ -273,15 +278,20 @@ tftp-copybootfiles
 	@$(ECHO) "  "
 	@$(ECHO) "  setenv netroot $(NFS_ROOT)"
 #	bootargs with quotes; ip=<client-ip>:<server-ip>:<gw-ip>:<netmask>:<hostname>:<device>:<autoconf>
-	@$(ECHO) '  setenv bootargs "console=$(TFTP_CONSOLE),115200 cma=256M uio_pdrv_genirq.of_id=generic-uio root=/dev/nfs rw nfsroot=$${serverip}:$${netroot},v3,tcp ip=$${ipaddr}:$${serverip}:$(NET_GATEWAY):$(NET_MASK):$(BOARD_HOSTNAME):eth0:off"'
+	@$(ECHO) '  setenv bootargs "console=$(TFTP_CONSOLE),115200 root=/dev/nfs rw nfsroot=$${serverip}:$${netroot},v3,tcp ip=$${ipaddr}:$${serverip}:$(NET_GATEWAY):$(NET_MASK):$(BOARD_HOSTNAME):eth0:off $(TFTP_ARGS)"'
 	@$(ECHO) "  $(TFTP_BOOTCMD) 0x00200000 - 0x00100000	# boot (no saveenv: the environment on the card stays as it is)"
 	@$(ECHO) "  "
-	@$(ECHO) "  Or choose \"TFTP/NFS Boot\" in the boot menu of uEnv.txt."
+	@$(ECHO) "  Or choose \"TFTP/NFS Boot\" in the boot menu of uEnv.txt (not in a release image, BOOT_NETBOOT=0)."
+	@$(ECHO) "  With the board on NFS the card is free: FLOW=rootfs make flash writes it over the network."
 
 # NFS clients allowed to mount the rootfs (rw, no_root_squash)
 NFS_CLIENTS ?= $(LAB_NFS_CLIENTS)
 
 setup-nfs:
+	@test -d $(NFS_ROOT)/etc || test -d $(NFS_ROOT_SRC)/etc || { echo "ERROR: $(NFS_ROOT_SRC) missing (FLOW=rootfs make build)"; exit 1; }
+    # only once: for a new rootfs remove the copy (sudo rm -rf $(NFS_ROOT))
+	@if [ -d $(NFS_ROOT)/etc ]; then echo "	    (0) NFS root $(NFS_ROOT) exists, kept"; \
+	else echo "	    (0) Copy $(NFS_ROOT_SRC) to $(NFS_ROOT)"; sudo cp -a $(NFS_ROOT_SRC) $(NFS_ROOT); fi
 	@echo "	    (1) Adding RootFS to /etc/exports.d/fpga-mister-$(PLATFORM).exports"
     # own file per platform, /etc/exports stays untouched
 	sudo mkdir -p /etc/exports.d

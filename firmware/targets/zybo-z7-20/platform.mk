@@ -58,6 +58,7 @@ BOARD_IP				?= $(LAB_BOARD_IP_zybo-z7-20)
 TFTP_KERNEL				:= zImage_kernel
 TFTP_DTB				:= zynq-zybo-z7.dtb
 TFTP_CONSOLE			:= ttyPS0
+TFTP_ARGS				:= systemd.unit=multi-user.target cpuidle.off=1 cma=64M uio_pdrv_genirq.of_id=generic-uio net.ifnames=0
 
 # rootfs (FLOW=rootfs): the FAT partition of the card, /media/fat on the board
 ROOTFS_BOOT_DEV			:= /dev/mmcblk0p1

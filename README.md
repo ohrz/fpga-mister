@@ -212,12 +212,14 @@ like a cartridge. With several ROMs, `boot.vhd` lists them and every ROM also ge
                                                             # kernel, rootfs, boot files, SD card image (sudo)
     VIDEO_TX=hdmi BOOT_NETBOOT=0 MISTER_ROMS= ./build-all.sh zybo-z7-20     # the release image
     PLATFORM=zybo-z7-20 FLOW=rootfs SDCARD=/dev/sdX make write              # image to a card in a card reader
-    PLATFORM=zybo-z7-20 FLOW=rootfs make flash                              # image to the card in the running board
+    PLATFORM=zybo-z7-20 FLOW=boot make tftpboot                             # TFTP files and NFS root on this host (sudo)
+    PLATFORM=zybo-z7-20 FLOW=rootfs make flash                              # image to the card of a board on TFTP/NFS
 
 The rootfs is a minimal Ubuntu 24.04 (systemd, SSH, DHCP, the libraries of Main_MiSTer, BlueZ); the image has a
 FAT32 partition with the boot files and `/media/fat` and an ext4 partition with the rootfs. `flash` rewrites the
-card in the board over Ethernet (busybox from RAM, read-back checksum, then reboot), needs root key login on the
-board and `BOARD_IP` (`lab.local.mk`). Details: `doc/ARCHITECTURE.md` §5.4.
+card in the board over Ethernet (read-back checksum, then reboot). It refuses a board running from its card: boot it
+over TFTP/NFS first, with the commands `tftpboot` prints at the U-Boot prompt. It needs root key login on the board
+and `BOARD_IP` (`lab.local.mk`); `tftpd-hpa` and `nfs-kernel-server` on the host. Details: `doc/ARCHITECTURE.md` §5.4.
 
 Build times on the development host (AMD Ryzen AI Max+ 395, 16 cores / 32 threads, 128 GB, Vivado 2025.2,
 three designs in parallel with `VIVADO_JOBS=10`):

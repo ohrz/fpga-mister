@@ -489,19 +489,25 @@ The FAT image is made without root (`mkfs.vfat`, `mcopy`), the partition table w
 For the release, `BOOT_NETBOOT=0` makes `uEnv.txt` boot the card at once (no boot menu, no lab addresses) and
 `MISTER_ROMS=` keeps local game images out (§5.3). `write` copies the image to a card in a card reader (`dd`).
 
-`flash` (`firmware/common/scripts/flash-sd-over-network.sh`) rewrites the card in the running board over Ethernet,
-for a board without a monitor or physical access: Main_MiSTer is stopped, the FAT partition unmounted, and a
-script in `/dev/shm` that runs only on a static busybox (the kernel has no SysRq) remounts `/` read-only or, when
-that is busy, freezes it (`fsfreeze`; a tmpfs on `/var/log` takes the wtmp record of `reboot`, which would wait for
-the frozen file system). Neither: nothing is written. It receives the image (TCP 5555), writes `/dev/mmcblk0`
-(`dd conv=fsync`), drops the page cache, reads the card back with `dd` and hands out a report (TCP 5556): the
-protection of `/`, the end of the `dd` log and an MD5 per 64 MiB chunk. Only when every chunk matches the image
-does the host send the reboot (TCP 5557, `reboot -f -n`); otherwise it lists the chunks that differ (offset,
-partition) and leaves the board waiting for `reboot` or `abort` on that port. The board gets a new DHCP
-lease and new SSH host keys; it is reachable under its host name `mister-<platform>` where the router registers
-DHCP names. `SSH_KEYS` (default `~/.ssh/id_ed25519.pub`) goes to
-`/linux/authorized_keys` of the new FAT partition beforehand, so root key login survives the flash. An interrupted
-transfer leaves a card that has to be written in a card reader.
+`tftpboot` (`FLOW=boot`) serves the kernel and DTB from `/srv/tftp/mister-<platform>` and exports a copy of the
+rootfs over NFS (`nfs-rootfs`, made once: a booted root writes SSH host keys and `machine-id`, which must not get
+into the tree the image is made from). It prints the U-Boot commands of a network boot; they need nothing of the
+card but U-Boot itself, so they also work on a release image and when the rootfs of the card is broken. With
+`BOOT_NETBOOT=1` the boot menu of `uEnv.txt` offers the same.
+
+`flash` (`firmware/common/scripts/flash-sd-over-network.sh`) rewrites the card in the board over Ethernet, for a
+board without a monitor or physical access. It refuses a board whose `/` is not NFS: a kernel with its root on the
+card keeps writing to it while it is overwritten, even with `/` frozen. That left the superblock and journal blocks
+of the old file system on the new one, and the card did not boot (`ext4_check_descriptors: Checksum for group 0
+failed`). Main_MiSTer is stopped, the partitions of the card are unmounted, and a script in `/dev/shm` that runs on
+a static busybox receives the image (TCP 5555), writes `/dev/mmcblk0` (`dd conv=fsync`), drops the page cache,
+reads the card back with `dd` and hands out a report (TCP 5556): the end of the `dd` log and an MD5 per 64 MiB
+chunk. Only when every chunk matches the image does the host send the reboot (TCP 5557, `reboot -f -n`); otherwise
+it lists the chunks that differ (offset, partition) and leaves the board waiting for `reboot` or `abort` on that
+port. The board gets a new DHCP lease and new SSH host keys; it is reachable under its host name
+`mister-<platform>` where the router registers DHCP names. `SSH_KEYS` (default `~/.ssh/id_ed25519.pub`) goes to
+`/linux/authorized_keys` of the new FAT partition beforehand, so root key login survives the flash. After an
+interrupted transfer the board still runs from NFS, and the flash can simply be repeated.
 
 ## 6. Clocks (Zybo, from FCLK0 = 100 MHz)
 

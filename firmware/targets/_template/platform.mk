@@ -62,6 +62,7 @@ BOARD_IP				?= $(LAB_BOARD_IP_<board>)
 TFTP_KERNEL				:= <zImage_kernel (zynq) | Image (zynqmp, open)>
 TFTP_DTB				:= <dts name>.dtb
 TFTP_CONSOLE			:= <ttyPS0>
+TFTP_ARGS				:= <kernel arguments of an NFS boot besides console, root and ip, as in uEnv.txt>
 
 # rootfs (FLOW=rootfs): the FAT partition of the card, /media/fat on the board
 ROOTFS_BOOT_DEV			:= /dev/mmcblk0p1
