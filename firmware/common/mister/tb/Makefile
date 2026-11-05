@@ -75,7 +75,7 @@ N64_PATCHES		:= $(sort $(wildcard ../cores/n64/patches/*.patch))
 NCD			:= $(WORK)/n64_cop0_diff_tb
 n64_cop0_diff_tb_NEEDS	:= $(N64_RTL)/cpu_cop0.vhd
 n64_cop0_diff_tb_PRE	:= rm -rf $(NCD)/p && mkdir -p $(NCD)/p/rtl && \
-			   cp $(N64_RTL)/cpu.vhd $(N64_RTL)/cpu_cop0.vhd $(NCD)/p/rtl/ && \
+			   cp $(N64_RTL)/*.vhd $(NCD)/p/rtl/ && \
 			   for f in $(abspath $(N64_PATCHES)); do patch -s -p1 -d $(NCD)/p -i $$f || exit 1; done && \
 			   sed 's/\bcpu_cop0\b/cpu_cop0_new/g' $(NCD)/p/rtl/cpu_cop0.vhd > $(NCD)/cpu_cop0_new.vhd && \
 			   sed 's/\bcpu_cop0\b/cpu_cop0_orig/g' $(N64_RTL)/cpu_cop0.vhd > $(NCD)/cpu_cop0_orig.vhd && \

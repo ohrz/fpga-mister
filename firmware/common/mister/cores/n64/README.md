@@ -56,7 +56,7 @@ original's addressing (16-bit words, wrap of the second half, 8-bit mode of ch3)
 | `pll_cfg_small.vhd` | takes the reconfiguration writes of `pll2`: the PAL divider selects the PAL clock |
 | `RDP_CombineAlpha.vhd` | alpha combiner, same behaviour as `rtl/RDP_CombineAlpha.vhd` (bench compares both), multiply-add in one DSP48, subtract and coverage multiply in LUTs: the path to `cvg_overflow` 20.3 → 17.3 ns after synthesis; read as VHDL 2008 (`core_vhdl2008`) |
 | `cpu_addr_fwd.vhd` | memory address adder of `cpu.vhd` with the operand forwarding select after the add (one adder per source) |
-| `patches/` | timing patches of the checkout, same outputs in every cycle: 0001 wires in `cpu_addr_fwd.vhd`, 0002 lets `cpu_cop0.vhd` write the exception address (BadVAddr, EntryHi, Context, XContext) one cycle later from registers |
+| `patches/` | timing patches of the checkout, same outputs in every cycle: 0001 wires in `cpu_addr_fwd.vhd`, 0002 lets `cpu_cop0.vhd` write the exception address (BadVAddr, EntryHi, Context, XContext) one cycle later from registers. 0003 is not a timing patch: the PIF fills the EEPROM right after configuration, not on the first `second_ena`, which came after the save had been loaded |
 | `cpu_mul.vhd` | 64 × 64 multiplier of the CPU, latency 2 as `altera_mult_add` |
 | `Shiftreg.vhd` | shift register of the RDP pipeline (`altshift_taps`), DEPTH enabled stages |
 | `core.xdc` | names of the MMCM clocks, `clk_vid` and the 50 MHz input asynchronous to the core clocks |

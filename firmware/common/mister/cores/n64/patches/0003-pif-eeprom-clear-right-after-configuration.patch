@@ -1,0 +1,25 @@
+Title      : PIF: clear the EEPROM right after configuration
+Project    : fpga-mister (patch for N64_MiSTer 5725381)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-11-05
+Description:
+  The PIF fills the EEPROM with FF once, on the first second_ena after
+  configuration. second_ena counts in VI.vhd and has not run before the game
+  starts on the Zybo, so the fill came about a second after the first ROM load,
+  when savemem had already loaded the .eep from the card: the game found a blank
+  EEPROM, initialized it, and autosave overwrote the file. The fill
+  now starts on the first clock after configuration, before Main can load
+  anything. The EEPROM holds the same FF when nothing is loaded; the RTC keeps
+  using second_ena.
+--- a/rtl/PIF.vhd	2026-11-05 09:57:35.851156165 +0100
++++ b/rtl/PIF.vhd	2026-11-05 09:57:35.883958584 +0100
+@@ -401,7 +401,7 @@
+          cic_input_first <= '0';
+          cic_input_ena   <= '0';
+          
+-         if (second_ena = '1' and INITDONE = '0') then
++         if (INITDONE = '0') then
+             INITDONE     <= '1';
+             EEPROMState  <= EEPROM_CLEAR;
+          end if;
