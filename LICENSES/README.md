@@ -42,6 +42,7 @@ combination is distributed under GPL-3.0.
 | Path | Origin | License | Text |
 | ---- | ------ | ------- | ---- |
 | `firmware/targets/zybo-z7-20/board_files/zybo-z7-20/` | [Digilent vivado-boards](https://github.com/Digilent/vivado-boards), Copyright (c) 2021 Digilent, Inc. | MIT | [MIT-Digilent-vivado-boards.txt](MIT-Digilent-vivado-boards.txt) |
+| `firmware/common/mister/cores/n64/N64-database.txt` | [Distribution_MiSTer](https://github.com/MiSTer-devel/Distribution_MiSTer), `games/N64/N64-database.txt`, commit `7d31062` | GPL-3.0 | [GPL-3.0.txt](GPL-3.0.txt) |
 | `firmware/targets/zybo-z7-20/constraints/Zybo-Z7-Master.xdc` | [Digilent digilent-xdc](https://github.com/Digilent/digilent-xdc), Copyright (c) 2017 Digilent | MIT | [MIT-Digilent-digilent-xdc.txt](MIT-Digilent-digilent-xdc.txt) |
 
 ## Not included

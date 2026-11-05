@@ -402,6 +402,7 @@ core switch while a core is running with quiesce 10 out of 10.
 | `/media/fat/menu.rbf` | menu core (`MISTER_CORES` entry with core `menu`, Zybo: `zybo-z7-20_menu`) |
 | `/media/fat/games/<core>/`, `config/` | directories for images (`boot.rom`, `boot.vhd` are mounted automatically) and settings; filled by the core profile's `games.sh`, if there is one |
 | `/media/fat/games/MSX/boot.vhd` | SD card of the MSX core (below) |
+| `/media/fat/games/N64/N64-database.txt` | save types of the N64 games, read by Main_MiSTer |
 | `/usr/local/sbin/ssm2603-init.sh`, `ssm2603.service` | codec init (board files `MISTER_ROOTFS_FILES`, §4) |
 | `/etc/systemd/system/mister.service` | starts `/media/fat/MiSTer` as root; `ExitType=cgroup`, because Main restarts itself via double fork after every core load |
 | `/etc/systemd/system/usr-lib-firmware-mister.mount` | tmpfs on `/lib/firmware/mister` (Ubuntu: `/lib` → `/usr/lib`) |

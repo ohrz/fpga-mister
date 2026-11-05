@@ -65,7 +65,7 @@ contains no ROMs, BIOS files or games**: you add the ones you are legally entitl
    | MSX (`_Computer/MSX.rbf`) | `games/MSX/` | nothing: `boot.vhd` (MSX-DOS2, Nextor, ROM loader) is included; game ROMs go into `boot.vhd` (a FAT16 disk image) or a card made by [games.sh](firmware/common/mister/cores/msx/games.sh) |
    | SNES (`_Console/SNES.rbf`) | `games/SNES/` | game images |
    | PSX (`_Console/PSX.rbf`) | `games/PSX/` | the BIOS as `boot.rom`, CD images |
-   | N64 (`_Console/N64.rbf`) | `games/N64/` | the PIF boot ROMs and game images ([core README](firmware/common/mister/cores/n64/README.md)) |
+   | N64 (`_Console/N64.rbf`) | `games/N64/` | the PIF boot ROMs and game images; the game database for save types is included ([core README](firmware/common/mister/cores/n64/README.md)) |
 
 3. Board: jumper JP5 on SD, JP2 on HOST (USB host). Monitor on the HDMI TX port (1280×720, sound over HDMI and
    on the headphone jack), USB keyboard or gamepad on the USB port (a hub for more than one device, e.g. a

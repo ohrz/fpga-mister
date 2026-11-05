@@ -73,3 +73,4 @@ still shows them.
 - Input: only controller 1; the `input` stage is not recorded yet.
 - MPAL gets the NTSC video clock (-1100 ppm).
 - PIF boot ROM: not in the repository, Main_MiSTer loads it.
+- Saves: Main_MiSTer takes the save type of a game from `games/N64/N64-database.txt`, without an entry there is no save file. `games.sh` puts the database on the card. Own entries go into `N64-database_user.txt` in the same folder, which is read first.
