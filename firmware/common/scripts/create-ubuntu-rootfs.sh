@@ -6,7 +6,8 @@
 # debian/ (kernel packages) and optional mister-rootfs.tgz (FLOW=mister make package).
 #   1. debootstrap --variant=minbase (first stage)
 #   2. build-ubuntu24.04-console-rootfs.sh in the chroot (no questions)
-#   3. passwords of root and fpga: ROOTFS_PASSWORD (FLOW=rootfs default: mister)
+#   3. passwords: root and fpga ROOTFS_PASSWORD (FLOW=rootfs default: fpga), mister
+#      ROOTFS_MISTER_PASSWORD (default: mister)
 # proc, dev/pts (and sys, mounted by the debootstrap second stage) are unmounted on every exit.
 #
 # Requirements (the chroot runs the target binaries through binfmt_misc + qemu-user)
@@ -36,6 +37,7 @@ fi
     { echo "ERROR: no binfmt_misc entry $binfmt (sudo apt install qemu-user-binfmt binfmt-support)" >&2; exit 1; }
 
 [ -n "${ROOTFS_PASSWORD:-}" ] || { echo "ERROR: ROOTFS_PASSWORD is empty" >&2; exit 1; }
+[ -n "${ROOTFS_MISTER_PASSWORD:-}" ] || { echo "ERROR: ROOTFS_MISTER_PASSWORD is empty" >&2; exit 1; }
 
 cleanup() {
     for m in dev/pts proc sys; do
@@ -67,7 +69,8 @@ sudo mount --bind /dev/pts "$targetdir/dev/pts"
 sudo chroot "$targetdir" /bin/bash /build-ubuntu24.04-console-rootfs.sh < /dev/null
 
 # passwords (not stored in any file)
-printf 'root:%s\nfpga:%s\n' "$ROOTFS_PASSWORD" "$ROOTFS_PASSWORD" | sudo chroot "$targetdir" chpasswd
+printf 'root:%s\nfpga:%s\nmister:%s\n' "$ROOTFS_PASSWORD" "$ROOTFS_PASSWORD" "$ROOTFS_MISTER_PASSWORD" |
+    sudo chroot "$targetdir" chpasswd
 
 # build helpers out of the rootfs
 sudo rm -f "$targetdir/usr/bin/qemu-arm-static" "$targetdir/usr/bin/qemu-aarch64-static" \

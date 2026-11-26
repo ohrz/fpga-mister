@@ -9,7 +9,8 @@
 #  Description: Main_MiSTer (ZYNQ) writes every core it loads to /lib/firmware/mister/core.bin
 #               and hands it to the fpga_manager (firmware loader search path /lib/firmware):
 #               a tmpfs spares the SD card. /lib is /usr/lib on Ubuntu 24.04 (merged /usr),
-#               a mount unit needs the canonical path.
+#               a mount unit needs the canonical path. 64M: one core.bin of the largest
+#               device (ZCU106 XCZU7EV: 19.3 MB uncompressed); tmpfs takes only what it holds.
 # ----------------------------------------------------------------------------------
 #  Copyright (c) 2026 by OHRZ
 # ----------------------------------------------------------------------------------
@@ -21,4 +22,4 @@ Description=tmpfs for the core bitstreams of Main_MiSTer
 What=tmpfs
 Where=/usr/lib/firmware/mister
 Type=tmpfs
-Options=mode=0755,size=16M
+Options=mode=0755,size=64M

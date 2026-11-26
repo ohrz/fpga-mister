@@ -21,6 +21,8 @@ UBOOT_ENV				?= CROSS_COMPILE=aarch64-linux-gnu- ARCH=aarch64
 TFTP_BOOTCMD			?= booti
 BOOT_KERNEL_FILES		?= Image:Image_kernel Image:Image
 ROOTFS_ARCH				?= arm64
+# Main_MiSTer is the armhf program on every board (the arm64 kernel runs it through CONFIG_COMPAT)
+MISTER_CROSS_COMPILE	?= arm-linux-gnueabihf-
 
 # every architecture: derived from the kernel settings of the profile
 BOOT_KERNEL_DTB			?= $(KERNEL_DTB)

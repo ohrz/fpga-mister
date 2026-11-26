@@ -26,9 +26,10 @@ KERNEL_OUT		:= firmware/build/$(PLATFORM)/$(VIVADO_VER)/kernel
 STAGE			:= firmware/build/$(PLATFORM)
 ROOTFS_DIR		:= $(STAGE)/ubuntu24.04-console-rootfs
 ROOTFS_TGZ		:= $(STAGE)/ubuntu24.04-console-rootfs.tgz
-# password of root and fpga (the default of the release image)
-ROOTFS_PASSWORD	?= mister
-export ROOTFS_PASSWORD
+# passwords of root and fpga, and of the user mister (the defaults of the release image)
+ROOTFS_PASSWORD	?= fpga
+ROOTFS_MISTER_PASSWORD ?= mister
+export ROOTFS_PASSWORD ROOTFS_MISTER_PASSWORD
 # DNS server when DHCP gives none (NFS root, no DHCP), empty: none
 ROOTFS_FALLBACK_DNS ?= $(LAB_FALLBACK_DNS)
 ROOTFS_HOSTNAME	?= mister-$(PLATFORM)
@@ -57,7 +58,8 @@ help::
 	@echo '    package    $(ROOTFS_TGZ) (NFS root, hand-made card)'
 	@echo '    clean      remove the rootfs directory (sudo)'
 	@echo ''
-	@echo '  ROOTFS_PASSWORD=<pw>   root and fpga (default mister)'
+	@echo '  ROOTFS_PASSWORD=<pw>   root and fpga (default fpga)'
+	@echo '  ROOTFS_MISTER_PASSWORD=<pw>  user mister (default mister)'
 	@echo '  ROOTFS_HOSTNAME        (default $(ROOTFS_HOSTNAME))'
 	@echo '  ROOTFS_FALLBACK_DNS    DNS without DHCP, e.g. NFS root (default $(ROOTFS_FALLBACK_DNS))'
 	@echo '  SDIMAGE_FAT_MB         size of the FAT32 partition (default $(SDIMAGE_FAT_MB))'
@@ -149,5 +151,7 @@ flash:
 	@$(ECHO) "Write $(SDIMAGE) to the card of $(BOARD_IP)"
 	@test -n "$(BOARD_IP)" || { echo "ERROR: BOARD_IP is not set"; exit 1; }
 	firmware/common/scripts/flash-sd-over-network.sh $(BOARD_IP) $(SDIMAGE) $(ROOTFS_DIR)/usr/bin/busybox $(SSH_KEYS)
+	$(if $(LAB_BOARD_HOST_$(PLATFORM)),-ssh-keygen -R $(LAB_BOARD_HOST_$(PLATFORM)) >/dev/null 2>&1)
+	@$(ECHO) "Next: copy games, saves, savestates and config back to the card"
 
 # Makefile ends here

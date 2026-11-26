@@ -59,6 +59,11 @@ TFTP_KERNEL				:= zImage_kernel
 TFTP_DTB				:= zynq-zybo-z7.dtb
 TFTP_CONSOLE			:= ttyPS0
 TFTP_ARGS				:= systemd.unit=multi-user.target cpuidle.off=1 cma=64M uio_pdrv_genirq.of_id=generic-uio net.ifnames=0
+# NFS root: the rootfs of FLOW=rootfs with /media/fat in the NFS root instead of the card's FAT
+# partition (firmware/common/mister/scripts/nfs-rootfs.sh: package of FLOW=mister, modules of the
+# kernel booted over TFTP); from the card only BOOT.bin (FSBL, U-Boot) and uEnv.txt
+NFS_ROOT_SETUP			= firmware/common/mister/scripts/nfs-rootfs.sh --modules firmware/build/zybo-z7-20/$(VIVADO_VER)/kernel	\
+						  firmware/build/zybo-z7-20/mister/rootfs mister-zybo-z7-20
 
 # rootfs (FLOW=rootfs): the FAT partition of the card, /media/fat on the board
 ROOTFS_BOOT_DEV			:= /dev/mmcblk0p1

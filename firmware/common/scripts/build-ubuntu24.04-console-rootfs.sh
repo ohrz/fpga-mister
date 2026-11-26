@@ -5,7 +5,7 @@
 # Expects in /: platform.sh (PLATFORM, ROOTFS_BOOT_DEV, ROOTFS_FALLBACK_DNS), hostname,
 # debian/*.deb (the kernel of FLOW=kernel make build) and optional mister-rootfs.tgz
 # (FLOW=mister make package: systemd units of Main_MiSTer and the board).  No questions;
-# the passwords of root and fpga are set afterwards by create-ubuntu-rootfs.sh (chpasswd).
+# the passwords of root, fpga and mister are set afterwards by create-ubuntu-rootfs.sh (chpasswd).
 #
 # Only what Main_MiSTer and a headless board need: systemd, SSH, DHCP (systemd-networkd),
 # time sync, the libraries of Main_MiSTer, BlueZ for Bluetooth gamepads, i2c-tools for the
@@ -50,7 +50,11 @@ apt-get install -y \
     nano less iproute2 iputils-ping tzdata ca-certificates
 
 #### Kernel modules (the same build as zImage on the FAT partition)
-dpkg -i $(ls /debian/linux-image-*.deb | grep -v -- -dbg_)
+debs=()
+for deb in /debian/linux-image-*.deb; do
+    [[ $deb == *-dbg_* ]] || debs+=("$deb")
+done
+dpkg -i "${debs[@]}"
 rm -rf /debian
 
 #### Locale and time zone
@@ -62,9 +66,10 @@ echo 'Etc/UTC' > /etc/timezone
 cp /hostname /etc/hostname
 printf '127.0.0.1\tlocalhost\n127.0.1.1\t%s\n::1\t\tlocalhost ip6-localhost ip6-loopback\n' "$(cat /hostname)" > /etc/hosts
 
-#### User fpga (sudo); root and fpga get their password from create-ubuntu-rootfs.sh
+#### Users fpga (sudo) and mister (MiSTer systems); the passwords come from create-ubuntu-rootfs.sh
 adduser --disabled-password --gecos "" fpga
 adduser fpga sudo
+adduser --disabled-password --gecos "" mister
 
 #### fstab: the FAT partition is /media/fat of MiSTer (games, saves, configs, cores);
 #### flush: written at once, the board is usually switched off without shutdown

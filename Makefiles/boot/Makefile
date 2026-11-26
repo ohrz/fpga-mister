@@ -61,6 +61,8 @@ PLATFORM_DEFAULT_TOPLEVEL		:= $(BOOT_DEFAULT_TOPLEVEL)
 
 # all outputs of this flow (boot.scr, BOOT.bin, kernel, DTBs, uEnv.txt) go here
 BOOT_DIR		:= firmware/build/$(PLATFORM)/$(VIVADO_VER)/boot
+# bitstreams of FLOW=vivado make build
+HW_BINS_DIR		:= firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw/bins
 
 #-----------------------------------------------------------------------------
 # Network boot (tftpboot, uEnv.txt templates): board and server addresses of the lab
@@ -72,7 +74,14 @@ NET_MASK		?= $(LAB_NET_MASK)
 # a copy of the rootfs (setup-nfs): a booted NFS root writes SSH host keys and machine-id, which
 # must not get into the tree the SD card image is made from
 NFS_ROOT		?= $(PWD)/firmware/build/$(PLATFORM)/nfs-rootfs
-NFS_ROOT_SRC	:= firmware/build/$(PLATFORM)/ubuntu24.04-console-rootfs
+NFS_ROOT_SRC	?= firmware/build/$(PLATFORM)/ubuntu24.04-console-rootfs
+# NFS_ROOT_SETUP (profile): command run as root with the NFS root as last argument after every
+# setup-nfs (firmware/common/mister/scripts/nfs-rootfs.sh: /media/fat of the package in the NFS root,
+# kernel modules, host name)
+NFS_ROOT_SETUP	?=
+# NFS_ROOT_DATA=<dir>: user files (games, saves, config, linux/authorized_keys, e.g. a copy of the
+# card's /media/fat) copied into /media/fat of the NFS root by NFS_ROOT_SETUP, never over a file there
+NFS_ROOT_DATA	?=
 # kernel arguments of an NFS boot besides console, root and ip (the board profile: as in its uEnv.txt)
 TFTP_ARGS		?= cma=256M uio_pdrv_genirq.of_id=generic-uio net.ifnames=0
 # directory below /srv/tftp: not just <platform>, other projects may use that one for the same board
@@ -119,6 +128,7 @@ help::
 	@echo ''
 	@echo '  BOOT_NETBOOT=0      uEnv.txt boots the SD card at once (no boot menu, no TFTP/NFS entry; release image)'
 	@echo '  NFS_CLIENTS=<net>   clients of the rootfs export (default $(NFS_CLIENTS))'
+	@echo '  NFS_ROOT_DATA=<dir>  user files for /media/fat of the NFS root (games, saves, config), never over a file there'
 	@echo '  BOARD_IP, TFTP_SERVER_IP, TFTP_DIR, NET_GATEWAY, NET_MASK, NFS_ROOT   network boot (defaults: $(or $(BOARD_IP),<board profile>), $(TFTP_SERVER_IP), $(NET_GATEWAY), $(NET_MASK))'
 	@echo '  platforms: $(SUPPORTED_PLATFORMS)'
 
@@ -235,11 +245,11 @@ endif
 # The bitstream of the boot design (input of bootgen for BOOT.bin)
 #-----------------------------------------------------------------------------
 $(BOOT_DIR)/pl:
-	@$(ECHO) "  (5) copy the bitstream of $(BOOT_TOPLEVEL) to boot/pl (BOOT.bin)"
-	@test -f firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw/bins/$(BOOT_TOPLEVEL).bit || { echo "ERROR: firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw/bins/$(BOOT_TOPLEVEL).bit missing, run FLOW=vivado TOPLEVEL=$(BOOT_TOPLEVEL) make build first"; exit 1; }
-	rm -rf $(BOOT_DIR)/pl
+	@$(ECHO) "  (5) copy fpga .bit files to boot/ (need them to generate BOOT.bin), .bit.bin for fpga load in U-Boot"
+	@test -f $(HW_BINS_DIR)/$(BOOT_TOPLEVEL).bit || { echo "ERROR: $(HW_BINS_DIR)/$(BOOT_TOPLEVEL).bit missing, run FLOW=vivado TOPLEVEL=$(BOOT_TOPLEVEL) make build first"; exit 1; }
 	mkdir -p $(BOOT_DIR)/pl
-	cp firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw/bins/$(BOOT_TOPLEVEL).bit						$(BOOT_DIR)/pl
+	cp $(HW_BINS_DIR)/*.bit										$(BOOT_DIR)/pl
+	cp $(HW_BINS_DIR)/*.bit.bin									$(BOOT_DIR)/pl
 
 #-----------------------------------------------------------------------------
 # Copy Linux kernel images
@@ -297,13 +307,19 @@ setup-nfs:
 	sudo mkdir -p /etc/exports.d
 	echo "$(NFS_ROOT) $(NFS_CLIENTS)(rw,sync,no_root_squash,no_subtree_check)" | sudo tee /etc/exports.d/fpga-mister-$(PLATFORM).exports
 	sudo exportfs -arv
+	$(if $(NFS_ROOT_SETUP),sudo $(NFS_ROOT_SETUP) $(if $(NFS_ROOT_DATA),--data $(abspath $(NFS_ROOT_DATA))) $(NFS_ROOT))
 
-tftp-copybootfiles:
+# the kernel and its DTB are all a network boot needs (FLOW=kernel make build), BOOT.bin stays on the card
+tftp-copybootfiles: $(BOOT_DIR)/Image_kernel $(BOOT_DIR)/kernel-$(PLATFORM_KERNEL_GENERATED_DTB)
 	@echo "	    (2) Copy boot/ files to /srv/tftp/$(TFTP_DIR)/"
     # one directory per board and repo: the boards share file names (zImage, Image, BOOT.bin, uEnv.txt);
     # readable for tftpd, not world-writable
 	sudo mkdir -p /srv/tftp/$(TFTP_DIR)
 	sudo cp -r $(BOOT_DIR)/* 	/srv/tftp/$(TFTP_DIR)/
+#	the bitstreams of the last builds for fpga load in U-Boot (a boot menu entry loads the menu design
+#	before Linux: Main_MiSTer reads its ID register at start); boot/pl only exists after a BOOT.bin build
+#	and may be older
+	$(if $(wildcard $(HW_BINS_DIR)/*.bit.bin),sudo mkdir -p /srv/tftp/$(TFTP_DIR)/pl && sudo cp $(HW_BINS_DIR)/*.bit.bin /srv/tftp/$(TFTP_DIR)/pl/,@echo "	    no bitstreams in $(HW_BINS_DIR) (FLOW=vivado make build), pl/ not updated")
 	sudo chmod -R a+rX /srv/tftp/$(TFTP_DIR)
 
 #-----------------------------------------------------------------------------
