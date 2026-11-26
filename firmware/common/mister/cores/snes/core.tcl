@@ -39,6 +39,8 @@ set core_name    SNES_MiSTer
 set core_exclude {*/rtl/pll* */rtl/chip/MSU1/msu_fifo.v}
 set core_add     {cores/snes/pll.vhd cores/snes/pll_cfg.vhd cores/snes/msu_fifo.vhd}
 set core_xdc     {cores/snes/core.xdc}
+# UltraScale(+) only (mister_project.tcl): clock placement rules of that family
+set core_xdc_ultrascale {cores/snes/core_ultrascale.xdc}
 set core_master_mhz 90.0
 set core_defines {MISTER_SMALL_VBUF=1 MISTER_ZYNQ_NO_DOWNSCALE=1 MISTER_ZYNQ_PACE_ALT=1}
 set core_generics {

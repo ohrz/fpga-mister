@@ -22,9 +22,9 @@
 #   Read before the board constraints.
 #-----------------------------------------------------------------------------
 
-set n64_pll  [get_cells -hier -filter {NAME =~ *pll/mmcm && REF_NAME =~ MMCME2_*}]
-set n64_pll2 [get_cells -hier -filter {NAME =~ *pll2/mmcm && REF_NAME =~ MMCME2_*}]
-set n64_pll2_ntsc [get_cells -hier -filter {NAME =~ *pll2/ntsc && REF_NAME =~ PLLE2_*}]
+set n64_pll  [get_cells -hier -filter {NAME =~ *pll/mmcm && REF_NAME =~ MMCME*}]
+set n64_pll2 [get_cells -hier -filter {NAME =~ *pll2/mmcm && REF_NAME =~ MMCME*}]
+set n64_pll2_ntsc [get_cells -hier -filter {NAME =~ *pll2/ntsc && (REF_NAME =~ PLLE* || REF_NAME =~ MMCME*)}]
 create_generated_clock -name n64_clk_1x  [get_pins -of_objects $n64_pll  -filter {REF_PIN_NAME == CLKOUT0}]
 create_generated_clock -name n64_clk_93  [get_pins -of_objects $n64_pll  -filter {REF_PIN_NAME == CLKOUT1}]
 create_generated_clock -name n64_clk_2x  [get_pins -of_objects $n64_pll  -filter {REF_PIN_NAME == CLKOUT2}]
@@ -46,3 +46,11 @@ set_clock_groups -asynchronous -group [get_clocks {n64_clk_vid n64_clk_vid_pal}]
 set_false_path -to [get_cells -hier -filter {NAME =~ *cfg_block.regiond_reg*}]
 set_property ASYNC_REG TRUE [get_cells -hier -filter {NAME =~ *cfg_block.regiond_reg* || NAME =~ *cfg_block.regiond2_reg*}]
 set_false_path -to [get_pins -hier -filter {NAME =~ *pll2/buf_vid/S*}]
+
+# Safe start of the core clocks (clk_safe_start in pll.vhd): ready (refclk) is the
+#   core's locked and is asynchronous to the core clocks as the MMCM's LOCKED was (the core
+#   synchronizes it itself, e.g. sdram init_s); clk_safe_start takes it into each output's domain
+#   over three registers to CE of that output's BUFGCE (the last stage is timed: same MMCM output).
+#   The core clocks are generated clocks of refclk, so Vivado would time all of it as synchronous
+#   (ready_r_reg*: also replicas of the register).
+set_false_path -from [get_cells -hier -filter {NAME =~ *pll/safe/ready_r_reg* && IS_SEQUENTIAL}]

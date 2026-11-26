@@ -41,6 +41,8 @@ set core_name    MSX_MiSTer
 set core_exclude {*/VM2413/* */rtl/pll*}
 set core_add     {cores/msx/pll.vhd cores/msx/scc_rom_hide.vhd}
 set core_xdc     {cores/msx/core.xdc}
+# UltraScale(+) only (mister_project.tcl): clock placement rules of that family
+set core_xdc_ultrascale {cores/msx/core_ultrascale.xdc}
 set core_master_mhz 90.0
 set core_defines {MISTER_ZYNQ_NO_DOWNSCALE=1}
 set core_generics {

@@ -64,6 +64,8 @@ set core_name    PSX_MiSTer
 set core_exclude {*/rtl/pll* */rtl/sdram.sv */rtl/savestates.vhd}
 set core_add     {cores/psx/pll.vhd cores/psx/pll2.vhd cores/psx/pll_cfg.vhd cores/psx/sdram.vhd cores/psx/savestates.vhd}
 set core_xdc     {cores/psx/core.xdc}
+# UltraScale(+) only (mister_project.tcl): clock placement rules of that family
+set core_xdc_ultrascale {cores/psx/core_ultrascale.xdc}
 set core_vhdl_std 2008
 set core_master_mhz 50.0
 set core_defines {MISTER_FB=1 MISTER_DOWNSCALE_NN=1 MISTER_DISABLE_ALSA=1 MISTER_ZYNQ_COREMEM=1 MISTER_ZYNQ_NO_DOWNSCALE=1

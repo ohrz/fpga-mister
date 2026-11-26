@@ -25,9 +25,9 @@
 #   Read before the board constraints.
 #-----------------------------------------------------------------------------
 
-set psx_pll  [get_cells -hier -filter {NAME =~ *pll/mmcm && REF_NAME =~ MMCME2_*}]
-set psx_pll2 [get_cells -hier -filter {NAME =~ *pll2/mmcm && REF_NAME =~ MMCME2_*}]
-set psx_pll2_ntsc [get_cells -hier -filter {NAME =~ *pll2/ntsc && REF_NAME =~ PLLE2_*}]
+set psx_pll  [get_cells -hier -filter {NAME =~ *pll/mmcm && REF_NAME =~ MMCME*}]
+set psx_pll2 [get_cells -hier -filter {NAME =~ *pll2/mmcm && REF_NAME =~ MMCME*}]
+set psx_pll2_ntsc [get_cells -hier -filter {NAME =~ *pll2/ntsc && (REF_NAME =~ PLLE* || REF_NAME =~ MMCME*)}]
 create_generated_clock -name psx_clk_1x [get_pins -of_objects $psx_pll -filter {REF_PIN_NAME == CLKOUT0}]
 create_generated_clock -name psx_clk_2x [get_pins -of_objects $psx_pll -filter {REF_PIN_NAME == CLKOUT1}]
 create_generated_clock -name psx_clk_3x [get_pins -of_objects $psx_pll -filter {REF_PIN_NAME == CLKOUT2}]
@@ -49,3 +49,11 @@ set_clock_groups -asynchronous -group [get_clocks {psx_clk_vid psx_clk_vid_pal}]
 #   of both inputs), only its clock edge is not determined.
 set_false_path -to [get_cells -hier -filter {NAME =~ *pll2/pal_s_reg?0?}]
 set_false_path -to [get_pins -hier -filter {NAME =~ *pll2/buf_vid/S*}]
+
+# Safe start of the core clocks (clk_safe_start in pll.vhd): ready (refclk) is the
+#   core's locked and is asynchronous to the core clocks as the MMCM's LOCKED was (the core
+#   synchronizes it itself, e.g. sdram init_s); clk_safe_start takes it into each output's domain
+#   over three registers to CE of that output's BUFGCE (the last stage is timed: same MMCM output).
+#   The core clocks are generated clocks of refclk, so Vivado would time all of it as synchronous
+#   (ready_r_reg*: also replicas of the register).
+set_false_path -from [get_cells -hier -filter {NAME =~ *pll/safe/ready_r_reg* && IS_SEQUENTIAL}]

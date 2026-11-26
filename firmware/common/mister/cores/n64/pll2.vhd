@@ -16,8 +16,10 @@
 --   BUFGMUX_CTRL: glitch-free switch, both inputs toggle) selects one:
 --     NTSC  PLLE2_BASE, refclk 50 MHz, DIVCLK 2, CLKFBOUT 37 -> VCO 925 MHz,
 --           CLKOUT0 / 19 = 48.684211 MHz (+49 ppm)
---     PAL   MMCME2_BASE, DIVCLK 4, CLKFBOUT 54.125 -> VCO 676.5625 MHz,
---           CLKOUT0 / 13.625 = 49.655963 MHz (-11 ppm)
+--     PAL   MMCME2_BASE, DIVCLK 1, CLKFBOUT 18.125 -> VCO 906.25 MHz,
+--           CLKOUT0 / 18.25 = 49.657534 MHz (+20 ppm); the VCO lies in the
+--           range of 7-series (600-1200) and UltraScale+ MMCMs (800-1600),
+--           the former 676.5625 MHz (-11 ppm) was 7-series only
 --   reconfig_to_pll(0) = '1' selects PAL (cores/n64/pll_cfg_small.vhd sets it
 --   from the divider N64.sv writes); MPAL gets the NTSC clock (-1100 ppm).
 --   PAL matters for the picture: a PAL VI (625 lines, 1589 clk_vid per
@@ -82,9 +84,9 @@ begin
     generic map (
       BANDWIDTH        => "OPTIMIZED",
       CLKIN1_PERIOD    => 20.0,
-      DIVCLK_DIVIDE    => 4,
-      CLKFBOUT_MULT_F  => 54.125,
-      CLKOUT0_DIVIDE_F => 13.625)
+      DIVCLK_DIVIDE    => 1,
+      CLKFBOUT_MULT_F  => 18.125,
+      CLKOUT0_DIVIDE_F => 18.25)
     port map (
       CLKIN1   => refclk,
       CLKFBIN  => fb_p,

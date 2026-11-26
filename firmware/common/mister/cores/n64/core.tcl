@@ -71,6 +71,8 @@ set core_add     {cores/n64/pll.vhd cores/n64/pll2.vhd cores/n64/pll_cfg_small.v
 # uses pRDP of the core (VHDL 2008)
 set core_vhdl2008 {cores/n64/RDP_CombineAlpha.vhd}
 set core_xdc     {cores/n64/core.xdc}
+# UltraScale(+) only (mister_project.tcl): clock placement rules of that family
+set core_xdc_ultrascale {cores/n64/core_ultrascale.xdc}
 set core_vhdl_std 2008
 # 80 % and full clocks: synthesis of mister timing driven with retiming (the
 # out-of-context run has no constraints otherwise), more effort in placement and phys_opt,

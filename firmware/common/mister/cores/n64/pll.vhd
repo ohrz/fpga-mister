@@ -30,6 +30,10 @@
 --   when clk_core leaves its reset: pll_reset on refclk resets the MMCM once
 --   refclk runs and again when it loses lock (an MMCM never reset after its
 --   input started does not lock).
+--   Outputs over clk_safe_start: BUFGCEs, enabled 256 refclk cycles after
+--   LOCKED through a synchronizer in each output's own domain; the core gets
+--   that enable as locked (an MMCM toggles before it locks, and on
+--   the ZCU106 these clocks drive HP2/HP3 through a SmartConnect).
 -------------------------------------------------------------------------------
 -- Copyright (c) 2026 by OHRZ
 -------------------------------------------------------------------------------
@@ -58,6 +62,8 @@ end entity pll;
 architecture rtl of pll is
   signal fb               : std_logic;
   signal lock_i, rst_seq  : std_logic;
+  signal ready            : std_logic;
+  signal clk_v            : std_logic_vector(2 downto 0);
   signal mmcm_rst         : std_logic;
   signal clk0, clk1, clk2 : std_logic;
 begin
@@ -88,11 +94,16 @@ begin
     generic map (G_RST_CYCLES => G_RST_CYCLES)
     port map (clk => refclk, locked => lock_i, rst => rst_seq);
 
-  locked <= lock_i;
+  -- outputs only after lock (the clocks drive HP2/HP3 of the ZynqMP through a
+  -- SmartConnect); the core gets ready as locked, its clocks follow within 3 to 4 cycles
+  clk_v <= clk2 & clk1 & clk0;
 
-  buf_1x  : BUFG port map (I => clk0, O => outclk_0);
-  buf_93  : BUFG port map (I => clk1, O => outclk_1);
-  buf_2x  : BUFG port map (I => clk2, O => outclk_2);
+  safe : entity work.clk_safe_start
+    generic map (G_N => 3)
+    port map (refclk => refclk, locked => lock_i, clk_in => clk_v,
+              clk_out(0) => outclk_0, clk_out(1) => outclk_1, clk_out(2) => outclk_2, ready => ready);
+
+  locked <= ready;
 
   outclk_3 <= '0';
 
