@@ -37,7 +37,11 @@
 --                     cycles, drain cycles, write FIFO full, writes, reads in
 --                     the upper half, misses there, misses on the replaced
 --                     line, ... replaced from the other half, misses on the
---                     next line (sdram_cache)
+--                     next line (sdram_cache); aux word 17 (0x54) is
+--                     board_status, a word of the board's own logic (e.g. the
+--                     HDMI init state of the ZCU106), 0 when unconnected;
+--                     aux word 18 (0x58) is the debug word of the COREMEM
+--                     bridge (avl_axi_bridge dbg, 0 without G_COREMEM)
 --     quiesce         CTRL bit 0 of hps_bus_axi holds the HP bridges (no new
 --                     command); STATUS bit 2 = all have closed every AXI
 --                     transaction: Main_MiSTer waits for it before it
@@ -239,6 +243,7 @@ entity mister_zynq is
 
     -- AXI3 master: DDRAM_* of the core (ddram_clk = the core's DDRAM_CLK, HP2), G_DDRAM = 1
     ddram_clk          : out std_logic;
+    ddram_aresetn      : out std_logic;   -- reset of the SmartConnect to HP2 on ddram_clk
     m_axi_ddram_awid    : out std_logic_vector(5 downto 0);
     m_axi_ddram_awaddr  : out std_logic_vector(31 downto 0);
     m_axi_ddram_awlen   : out std_logic_vector(3 downto 0);
@@ -280,6 +285,7 @@ entity mister_zynq is
 
     -- AXI3 master: memory port of the core (coremem_clk = its clock, HP3), G_COREMEM = 1
     coremem_clk        : out std_logic;
+    coremem_aresetn    : out std_logic;   -- reset of the SmartConnect to HP3 on coremem_clk
     m_axi_coremem_awid  : out std_logic_vector(5 downto 0);
     m_axi_coremem_awaddr : out std_logic_vector(31 downto 0);
     m_axi_coremem_awlen : out std_logic_vector(3 downto 0);
@@ -340,7 +346,9 @@ entity mister_zynq is
     btn_user      : in  std_logic;
     sw            : in  std_logic_vector(3 downto 0);  -- SW of the DE10-Nano
     led           : out std_logic_vector(7 downto 0);  -- LED of the DE10-Nano (DE10 layout)
-    status_err    : out std_logic        -- sticky: a stage C error (emulator, region, cache, AXI)
+    status_err    : out std_logic;       -- sticky: a stage C error (emulator, region, cache, AXI)
+    -- quasi-static word of the board (clk_100 domain or slower), aux word 17 (0x54) of hps_bus_axi
+    board_status  : in  std_logic_vector(31 downto 0) := (others => '0')
   );
 end entity mister_zynq;
 
@@ -359,9 +367,15 @@ architecture rtl of mister_zynq is
   -- FREQ_HZ only for the block design (an output clock needs one, IP_Flow 19-4751); the real
   -- frequency is the core's DDRAM_CLK, timed through its MMCM constraints (same for coremem_clk,
   -- vid_clk, vid_clk_ser)
-  attribute X_INTERFACE_PARAMETER of ddram_clk : signal is "ASSOCIATED_BUSIF m_axi_ddram, FREQ_HZ 100000000";
+  attribute X_INTERFACE_PARAMETER of ddram_clk : signal is
+    "ASSOCIATED_BUSIF m_axi_ddram, ASSOCIATED_RESET ddram_aresetn, FREQ_HZ 100000000";
+  attribute X_INTERFACE_INFO of ddram_aresetn : signal is "xilinx.com:signal:reset:1.0 ddram_aresetn RST";
+  attribute X_INTERFACE_PARAMETER of ddram_aresetn : signal is "POLARITY ACTIVE_LOW";
   attribute X_INTERFACE_INFO of coremem_clk : signal is "xilinx.com:signal:clock:1.0 coremem_clk CLK";
-  attribute X_INTERFACE_PARAMETER of coremem_clk : signal is "ASSOCIATED_BUSIF m_axi_coremem, FREQ_HZ 100000000";
+  attribute X_INTERFACE_PARAMETER of coremem_clk : signal is
+    "ASSOCIATED_BUSIF m_axi_coremem, ASSOCIATED_RESET coremem_aresetn, FREQ_HZ 100000000";
+  attribute X_INTERFACE_INFO of coremem_aresetn : signal is "xilinx.com:signal:reset:1.0 coremem_aresetn RST";
+  attribute X_INTERFACE_PARAMETER of coremem_aresetn : signal is "POLARITY ACTIVE_LOW";
   attribute X_INTERFACE_INFO of vid_clk : signal is "xilinx.com:signal:clock:1.0 vid_clk CLK";
   attribute X_INTERFACE_PARAMETER of vid_clk : signal is "FREQ_HZ 100000000";
   attribute X_INTERFACE_INFO of vid_clk_ser : signal is "xilinx.com:signal:clock:1.0 vid_clk_ser CLK";
@@ -527,6 +541,8 @@ architecture rtl of mister_zynq is
   constant C_ADDR_BITS : natural := G_SD_BANK_BITS + G_SD_ROW_BITS + G_SD_COL_BITS;
 
   signal rst_100       : std_logic;
+  signal ps_seen       : std_logic := '0';       -- clk_100: the PS made an AXI-Lite request
+  signal hp_rst        : std_logic;
   signal rst_m_s       : std_logic_vector(1 downto 0) := "11";   -- reset synchronizer, clk_master
   signal rst_m         : std_logic;
   signal clk_sys       : std_logic;
@@ -611,13 +627,13 @@ architecture rtl of mister_zynq is
   signal sd_idle_s     : std_logic_vector(1 downto 0) := "00";
   signal v_idle        : std_logic;
   signal hp_idle       : std_logic := '0';
-  -- ddram_clk: dd_rst_s, dd_hold_s; clk_100: dd_idle_s, dd_err_s
-  signal dd_rst_s      : std_logic_vector(1 downto 0) := "11";
+  -- ddram_clk: dd_rst, dd_hold_s; clk_100: dd_idle_s, dd_err_s
+  signal dd_rst        : std_logic;
   signal dd_hold_s     : std_logic_vector(1 downto 0) := "00";
   signal dd_idle_s     : std_logic_vector(1 downto 0) := "00";
   signal dd_err_s      : std_logic_vector(1 downto 0) := "00";
-  -- coremem_clk: cm_rst_s, cm_hold_s; clk_100: cm_idle_s, cm_err_s
-  signal cm_rst_s      : std_logic_vector(1 downto 0) := "11";
+  -- coremem_clk: cm_rst, cm_hold_s; clk_100: cm_idle_s, cm_err_s
+  signal cm_rst        : std_logic;
   signal cm_hold_s     : std_logic_vector(1 downto 0) := "00";
   signal cm_idle_s     : std_logic_vector(1 downto 0) := "00";
   signal cm_err_s      : std_logic_vector(1 downto 0) := "00";
@@ -629,14 +645,40 @@ architecture rtl of mister_zynq is
   signal lag           : std_logic_vector(15 downto 0);
   signal perf_ev       : std_logic_vector(C_PERF_N - 1 downto 0) := (others => '0');
   signal perf_snap     : std_logic_vector(32 * (C_PERF_N + 1) - 1 downto 0);
+  signal aux_words     : std_logic_vector(32 * (C_PERF_N + 4) - 1 downto 0);  -- cm_cnt & cm_dbg & board_status & perf_snap
+  signal cm_dbg        : std_logic_vector(31 downto 0);
+  -- HP3 beats since the SmartConnect reset (coremem_clk, quasi-static when read): 31:16 read beats
+  -- requested (AR), 15:0 read beats received (R); more R than AR = responses of an older transaction
+  signal cm_cnt        : std_logic_vector(31 downto 0);
+  signal cm_arn        : std_logic;
+  signal cm_arlen      : std_logic_vector(3 downto 0);
+  signal cm_arvalid    : std_logic;
+  signal cm_ar_beats, cm_r_beats : unsigned(15 downto 0);
 
   attribute ASYNC_REG : string;
   attribute ASYNC_REG of rst_m_s, err_s, sd_hold_s, sd_idle_s : signal is "TRUE";
-  attribute ASYNC_REG of dd_rst_s, dd_hold_s, dd_idle_s, dd_err_s : signal is "TRUE";
+  attribute ASYNC_REG of dd_hold_s, dd_idle_s, dd_err_s : signal is "TRUE";
 
 begin
 
   rst_100 <= not aresetn;
+
+  -- HP2/HP3 open with the first AXI-Lite request of the PS after the PL reset (Main reads the ID
+  -- register once the fpga_manager has returned).  On the ZynqMP the first HP3 read of a core
+  -- issued before that, while the firmware still finishes the configuration, was accepted and
+  -- never answered (41 ms after the PL reset was too early, 50 ms after the return of
+  -- the fpga_manager was not).  hp_rst is a flip-flop output for the synchronizers.
+  process (clk_100)
+  begin
+    if rising_edge(clk_100) then
+      if rst_100 = '1' then
+        ps_seen <= '0';
+      elsif s_axi_arvalid = '1' or s_axi_awvalid = '1' then
+        ps_seen <= '1';
+      end if;
+    end if;
+  end process;
+  hp_rst <= not ps_seen;
 
   process (clk_master)
   begin
@@ -820,9 +862,11 @@ begin
   ------------------------------------------------------------------------------
   -- HPS bus: GPO/GPI registers, sys_top's own logic behind them
   ------------------------------------------------------------------------------
+  aux_words <= cm_cnt & cm_dbg & board_status & perf_snap;
+
   hps : entity work.hps_bus_axi
     generic map (G_CORE_TYPE => x"A4", G_RD_WAIT => G_RD_WAIT, G_RAW => true, G_ADDR_W => 7,
-                 G_AUX => C_PERF_N + 1)
+                 G_AUX => C_PERF_N + 4)
     port map (
       aclk => clk_100, aresetn => aresetn,
       s_axi_awaddr => s_axi_awaddr, s_axi_awprot => s_axi_awprot, s_axi_awvalid => s_axi_awvalid,
@@ -835,7 +879,7 @@ begin
       reset_in => '0', reset_req => open, quiesce => quiesce, idle => hp_idle, led_disk => open,
       clk_sys => clk_sys, io_din => open, io_strobe => open, io_fpga => open, io_uio => open,
       io_osd_hdmi => open, io_osd_vga => open, io_dout => (others => '0'), io_wide => '0', io_wait => '0',
-      gp_out_sys => gp_out_sys, gp_in_sys => gp_in_sys, aux => perf_snap);
+      gp_out_sys => gp_out_sys, gp_in_sys => gp_in_sys, aux => aux_words);
 
   ------------------------------------------------------------------------------
   -- stage C: gated core master clock, SDRAM emulator, BRAM region, cache, HP0
@@ -1011,18 +1055,25 @@ begin
   ddram_clk <= dd_clk;
 
   g_ddram_on : if G_DDRAM /= 0 generate
-    -- reset and hold into the DDRAM_CLK domain; dd_idle and dd_error go back in the clk_100 process
+    -- reset and hold into the DDRAM_CLK domain; dd_idle and dd_error go back in the clk_100 process.
+    -- The SmartConnect to HP2 gets 32 running cycles of DDRAM_CLK as reset (the PL reset ends
+    -- before the core's MMCM runs), the bridge stays in reset until the PS has talked
+    -- (hp_rst)
+    dd_reset : entity work.axi_reset_sync
+      port map (clk => dd_clk, rst_in => rst_100, aresetn => ddram_aresetn, rst => open);
+    dd_start : entity work.axi_reset_sync
+      port map (clk => dd_clk, rst_in => hp_rst, aresetn => open, rst => dd_rst);
+
     process (dd_clk)
     begin
       if rising_edge(dd_clk) then
-        dd_rst_s  <= dd_rst_s(0) & rst_100;
         dd_hold_s <= dd_hold_s(0) & quiesce;
       end if;
     end process;
 
     ddram_bridge : entity work.avl_axi_bridge
       port map (
-        clk => dd_clk, rst => dd_rst_s(1), hold => dd_hold_s(1), idle => dd_idle,
+        clk => dd_clk, rst => dd_rst, hold => dd_hold_s(1), idle => dd_idle,
         avl_waitrequest => dd_waitrequest, avl_burstcount => dd_burstcount, avl_address => dd_address,
         avl_read => dd_read, avl_readdata => dd_readdata, avl_readdatavalid => dd_readdatavalid,
         avl_write => dd_write, avl_writedata => dd_writedata, avl_byteenable => dd_byteenable,
@@ -1064,6 +1115,7 @@ begin
     m_axi_ddram_arlock <= "00"; m_axi_ddram_arcache <= "0011"; m_axi_ddram_arprot <= "000";
     m_axi_ddram_arqos <= "0000"; m_axi_ddram_arvalid <= '0';
     m_axi_ddram_rready <= '1';
+    ddram_aresetn <= aresetn;
   end generate;
 
   ------------------------------------------------------------------------------
@@ -1072,11 +1124,35 @@ begin
   coremem_clk <= cm_clk;
 
   g_coremem_on : if G_COREMEM /= 0 generate
-    -- reset and hold into the coremem_clk domain; cm_idle and cm_error go back in the clk_100 process
+    -- reset and hold into the coremem_clk domain; cm_idle and cm_error go back in the clk_100
+    -- process.  Resets as for HP2 above: 32 cycles for the SmartConnect, hp_rst for the bridge.
+    cm_reset : entity work.axi_reset_sync
+      port map (clk => cm_clk, rst_in => rst_100, aresetn => cm_arn, rst => open);
+    coremem_aresetn <= cm_arn;
+
     process (cm_clk)
     begin
       if rising_edge(cm_clk) then
-        cm_rst_s  <= cm_rst_s(0) & rst_100;
+        if cm_arn = '0' then
+          cm_ar_beats <= (others => '0');
+          cm_r_beats  <= (others => '0');
+        else
+          if cm_arvalid = '1' and m_axi_coremem_arready = '1' then
+            cm_ar_beats <= cm_ar_beats + unsigned(cm_arlen) + 1;
+          end if;
+          if m_axi_coremem_rvalid = '1' then                -- the bridge's rready is '1'
+            cm_r_beats <= cm_r_beats + 1;
+          end if;
+        end if;
+      end if;
+    end process;
+    cm_cnt <= std_logic_vector(cm_ar_beats) & std_logic_vector(cm_r_beats);
+    cm_start : entity work.axi_reset_sync
+      port map (clk => cm_clk, rst_in => hp_rst, aresetn => open, rst => cm_rst);
+
+    process (cm_clk)
+    begin
+      if rising_edge(cm_clk) then
         cm_hold_s <= cm_hold_s(0) & quiesce;
       end if;
     end process;
@@ -1084,7 +1160,7 @@ begin
     coremem_bridge : entity work.avl_axi_bridge
       generic map (G_BYTE_OFFSET => G_SDRAM_BASE)
       port map (
-        clk => cm_clk, rst => cm_rst_s(1), hold => cm_hold_s(1), idle => cm_idle,
+        clk => cm_clk, rst => cm_rst, hold => cm_hold_s(1), idle => cm_idle,
         avl_waitrequest => cm_waitrequest, avl_burstcount => cm_burstcount, avl_address => cm_address,
         avl_read => cm_read, avl_readdata => cm_readdata, avl_readdatavalid => cm_readdatavalid,
         avl_write => cm_write, avl_writedata => cm_writedata, avl_byteenable => cm_byteenable,
@@ -1097,14 +1173,16 @@ begin
         m_axi_wlast => m_axi_coremem_wlast, m_axi_wvalid => m_axi_coremem_wvalid, m_axi_wready => m_axi_coremem_wready,
         m_axi_bid => m_axi_coremem_bid, m_axi_bresp => m_axi_coremem_bresp, m_axi_bvalid => m_axi_coremem_bvalid,
         m_axi_bready => m_axi_coremem_bready,
-        m_axi_arid => m_axi_coremem_arid, m_axi_araddr => m_axi_coremem_araddr, m_axi_arlen => m_axi_coremem_arlen,
+        m_axi_arid => m_axi_coremem_arid, m_axi_araddr => m_axi_coremem_araddr, m_axi_arlen => cm_arlen,
         m_axi_arsize => m_axi_coremem_arsize, m_axi_arburst => m_axi_coremem_arburst,
         m_axi_arlock => m_axi_coremem_arlock, m_axi_arcache => m_axi_coremem_arcache,
         m_axi_arprot => m_axi_coremem_arprot, m_axi_arqos => m_axi_coremem_arqos,
-        m_axi_arvalid => m_axi_coremem_arvalid, m_axi_arready => m_axi_coremem_arready,
+        m_axi_arvalid => cm_arvalid, m_axi_arready => m_axi_coremem_arready,
         m_axi_rid => m_axi_coremem_rid, m_axi_rdata => m_axi_coremem_rdata, m_axi_rresp => m_axi_coremem_rresp,
         m_axi_rlast => m_axi_coremem_rlast, m_axi_rvalid => m_axi_coremem_rvalid, m_axi_rready => m_axi_coremem_rready,
-        axi_error => cm_error);
+        axi_error => cm_error, dbg => cm_dbg);
+    m_axi_coremem_arlen   <= cm_arlen;
+    m_axi_coremem_arvalid <= cm_arvalid;
   end generate;
 
   g_coremem_off : if G_COREMEM = 0 generate
@@ -1114,6 +1192,9 @@ begin
     cm_readdatavalid <= '0';
     cm_idle          <= '1';
     cm_error         <= '0';
+    cm_dbg           <= (others => '0');
+    cm_cnt           <= (others => '0');
+    coremem_aresetn  <= aresetn;
     m_axi_coremem_awid <= (others => '0'); m_axi_coremem_awaddr <= (others => '0');
     m_axi_coremem_awlen <= (others => '0'); m_axi_coremem_awsize <= "011"; m_axi_coremem_awburst <= "01";
     m_axi_coremem_awlock <= "00"; m_axi_coremem_awcache <= "0011"; m_axi_coremem_awprot <= "000";

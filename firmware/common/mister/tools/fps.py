@@ -28,10 +28,17 @@ def header(offset):
     return mmap.mmap(fd, 4096, mmap.MAP_SHARED, mmap.PROT_READ, offset=0x20000000 + offset)
 
 
+def head(b):
+    """Bytes 0-9 of a header, read one by one: a slice of the mapping copies with word loads,
+    unaligned ones fault on device memory under an arm64 kernel (Bus error, ZCU106)."""
+    return bytes(b[i] for i in range(10))
+
+
 # a buffer header: type 1, format, header size (bytes 0-3) and image size (6-9) as in buffer 0
 b0 = header(0)
 small = [header(n * 0x200000) for n in (1, 2)]
-if all(b[0:4] == b0[0:4] and b[6:10] == b0[6:10] for b in small):
+h0 = head(b0)
+if all(head(b)[0:4] == h0[0:4] and head(b)[6:10] == h0[6:10] for b in small):
     size, bufs = 2, [b0] + small
 else:
     size, bufs = 8, [b0] + [header(n * 0x800000) for n in (1, 2)]

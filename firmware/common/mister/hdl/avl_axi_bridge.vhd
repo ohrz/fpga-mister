@@ -129,7 +129,10 @@ entity avl_axi_bridge is
     m_axi_rready      : out std_logic;
 
     -- sticky error flag: an AXI response other than OKAY (cleared by rst)
-    axi_error         : out std_logic
+    axi_error         : out std_logic;
+
+    -- state for debugging (quasi-static when the bridge hangs; see dbg below), may stay open
+    dbg               : out std_logic_vector(31 downto 0)
   );
 end entity avl_axi_bridge;
 
@@ -222,6 +225,29 @@ begin
   m_axi_wdata   <= w_head(63 downto 0);
 
   avl_waitrequest <= wait_r;
+
+  -- debug word: 2:0 state (idle, rd_ar, wr_aw, wr_data, wr_flush), 3 avl_waitrequest,
+  -- 4 avl_read, 5 avl_write, 6 awvalid, 7 awready, 8 wvalid, 9 wready, 10 bvalid,
+  -- 11 arvalid, 12 arready, 13 rvalid, 14 error, 15 hold, 21:16 write bursts without
+  -- response, 24:22 write buffer level, 25 rst, 31:26 read beats outstanding (5:0)
+  dbg(2 downto 0) <= std_logic_vector(to_unsigned(state_t'pos(state), 3));
+  dbg(3)  <= wait_r;
+  dbg(4)  <= avl_read;
+  dbg(5)  <= avl_write;
+  dbg(6)  <= awvalid;
+  dbg(7)  <= m_axi_awready;
+  dbg(8)  <= '1' when wbuf_level /= 0 else '0';
+  dbg(9)  <= m_axi_wready;
+  dbg(10) <= m_axi_bvalid;
+  dbg(11) <= arvalid;
+  dbg(12) <= m_axi_arready;
+  dbg(13) <= m_axi_rvalid;
+  dbg(14) <= error_flag;
+  dbg(15) <= hold;
+  dbg(21 downto 16) <= std_logic_vector(wr_pending);
+  dbg(24 downto 22) <= std_logic_vector(wbuf_level);
+  dbg(25) <= rst;
+  dbg(31 downto 26) <= std_logic_vector(rd_pending(5 downto 0));
 
   m_axi_bready  <= '1';
   m_axi_rready  <= '1';

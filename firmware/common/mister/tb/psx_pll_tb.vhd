@@ -32,6 +32,9 @@
 --       PAL, then the fast-forward divider to address 7   NTSC
 --     from the first lock on no high or low phase of clk_vid shorter than
 --     9.2 ns (glitch-free switch); waitrequest '0' at every write
+--     safe start: no rising edge of the core clocks while locked is '0';
+--     locked rises at least 200 refclk periods after the MMCM's LOCKED;
+--     the same after a pulse on rst (lock loss) at the end, then a relock
 --   Ends with "PASS" or a failure.  VHDL-2008 (ghdl --std=08).
 -------------------------------------------------------------------------------
 -- Copyright (c) 2026 by OHRZ
@@ -111,6 +114,20 @@ begin
     assert n >= RST_CYCLES report "MMCM reset only " & integer'image(n) & " refclk edges" severity failure;
     ok_rst <= true;
     wait;
+  end process;
+
+  -- safe start (clk_safe_start): no rising edge of a core clock while locked is '0', and
+  -- locked (the enable of the BUFGCE outputs) only after the MMCM's own LOCKED
+  process (clk_1x, clk_2x, clk_3x, locked)
+    alias lock_i is <<signal .psx_pll_tb.dut.lock_i : std_logic>>;
+  begin
+    if rising_edge(clk_1x) or rising_edge(clk_2x) or rising_edge(clk_3x) then
+      assert locked = '1' report "core clock edge while locked is '0' (safe start)" severity failure;
+    end if;
+    if rising_edge(locked) then
+      assert lock_i = '1' and lock_i'stable(200 * 20 ns)
+        report "locked less than 200 refclk periods after the MMCM's LOCKED" severity failure;
+    end if;
   end process;
 
   -- grid check of one pll output: rising edges at t0 + k * period, high time period / 2
@@ -241,6 +258,18 @@ begin
     assert ok_grid = (0 to 2 => true) and ok_vid and ok_rst report "timeout: grid " & boolean'image(ok_grid(0)) & boolean'image(ok_grid(1)) &
       boolean'image(ok_grid(2)) & ", clk_vid " & boolean'image(ok_vid) & ", reset " & boolean'image(ok_rst)
       severity failure;
+    -- lock loss: rst stops the MMCMs (LOCKED and the enable clocks with them); after it they
+    -- start again with clocks before the lock, which must not pass (the safe-start check
+    -- above), and locked must come back
+    rst <= '1';
+    wait for 2 us;
+    rst <= '0';
+    wait until locked = '0' for 1 us;
+    assert locked = '0' report "locked still '1' after the MMCM reset" severity failure;
+    wait until locked = '1' for 400 us;
+    assert locked = '1' report "no lock again after the MMCM reset" severity failure;
+    wait until rising_edge(clk_1x) for 1 us;
+    assert clk_1x'event report "clk_1x does not run again after the relock" severity failure;
     report "PASS";
     std.env.finish;                         -- a stopped refclk makes the MMCM model fail
     wait;

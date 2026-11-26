@@ -170,7 +170,7 @@ class Selection(unittest.TestCase):
             os.makedirs(os.path.dirname(p), exist_ok=True)
             with open(p, "w") as f:
                 f.write(text)
-        w("firmware/targets/b/platform.mk", "MISTER_CORES := b_menu$(SUFFIX):menu b_msx$(SUFFIX):MSX\n")
+        w("firmware/targets/b/platform.mk", "VIDEO_TX ?= dvi\nMISTER_CORES := b_menu$(SUFFIX):menu b_msx$(SUFFIX):MSX\n")
         w("firmware/targets/c/platform.mk", "X := 1\n")
         w("firmware/targets/_template/platform.mk", "MISTER_CORES := _template_menu:menu\n")
         for core in ("menu", "msx", "snes", "n64", "gone"):
@@ -186,6 +186,11 @@ class Selection(unittest.TestCase):
         self.assertEqual(bm.boards_and_cores(root, (), ["snes"]), [("b", "snes")])
         self.assertEqual(bm.design_name("b", "x", "hdmi"), "b_x_hdmi")
         self.assertEqual(bm.design_name("b", "x", "dvi"), "b_x")
+        # board without dvi/hdmi variants (ZCU106): no suffix, VIDEO not passed
+        self.assertTrue(bm.has_video_tx(root, "b"))
+        self.assertFalse(bm.has_video_tx(root, "c"))
+        self.assertFalse(bm.has_video_tx(root, "missing"))
+        self.assertEqual(bm.design_name("c", "x", "hdmi", False), "c_x")
 
 
 if __name__ == "__main__":

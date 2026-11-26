@@ -30,7 +30,7 @@ UNISIM_SRC	?= $(XILINX_VIVADO)/data/vhdl/src/unisims
 # bench: the design files it needs, in analysis order
 BENCHES				:= altsyncram_tb altdpram_tb lpm_mult_tb altddio_out_tb avl_axi_bridge_tb avl_axi_bridge_err_tb avl_axi_bridge_werr_tb sdram_emu_tb sdram_cache_tb sdram_cache_split_tb core_clock_stall_tb core_clock_stall_1to1_tb core_clock_stall_alt_tb sdram_stagec_tb hps_bus_axi_tb hps_bus_axi_raw_tb perf_counters_tb mister_zynq_tb mister_zynq_noreg_tb mister_zynq_free_tb mister_zynq_hp2err_tb mister_zynq_hp3err_tb \
 					   scc_rom_hide_tb msu_fifo_tb snes_pll_tb snes_pll_cfg_tb clk_pulse_div_tb n64_cpu_mul_tb n64_cpu_addr_fwd_tb n64_cop0_diff_tb n64_shiftreg_tb n64_pll_tb n64_sdram_tb n64_combinealpha_tb audio_i2s_simple_tb video_pll_tb \
-					   psx_sdram_tb gpu_poly_diff_tb psx_savestates_tb psx_savestates_fast_tb psx_pll_tb
+					   psx_sdram_tb gpu_poly_diff_tb psx_savestates_tb psx_savestates_fast_tb psx_pll_tb async_word_fifo_tb axi_reset_sync_tb
 # benches with Xilinx primitives (unisim_src/primitive/*.vhd): NOT RUN (no failure) without UNISIM_SRC
 UNISIM_BENCHES		:= mister_zynq_tb mister_zynq_noreg_tb mister_zynq_free_tb mister_zynq_hp2err_tb mister_zynq_hp3err_tb snes_pll_tb clk_pulse_div_tb n64_pll_tb video_pll_tb \
 					   psx_pll_tb
@@ -44,7 +44,7 @@ mister_zynq_hp3err_tb_UNISIM	:= $(mister_zynq_free_tb_UNISIM)
 mister_zynq_hp3err_tb_FLAGS	:= $(mister_zynq_free_tb_FLAGS)
 snes_pll_tb_UNISIM	:= BUFGCE.vhd
 clk_pulse_div_tb_UNISIM	:= BUFGCE.vhd
-n64_pll_tb_UNISIM	:= MMCME2_ADV.vhd MMCME2_BASE.vhd PLLE2_ADV.vhd PLLE2_BASE.vhd BUFGCTRL.vhd BUFG.vhd
+n64_pll_tb_UNISIM	:= MMCME2_ADV.vhd MMCME2_BASE.vhd PLLE2_ADV.vhd PLLE2_BASE.vhd BUFGCTRL.vhd BUFG.vhd BUFGCE.vhd
 # extra GHDL options of a bench (the MMCM models use std_logic_signed/std_logic_arith and hide signals)
 n64_pll_tb_FLAGS	:= -fsynopsys -Wno-hide
 video_pll_tb_UNISIM	:= PLLE2_ADV.vhd PLLE2_BASE.vhd BUFG.vhd
@@ -54,6 +54,7 @@ msu_fifo_tb_SRC		:= ../cores/snes/msu_fifo.vhd msu_fifo_tb.vhd
 snes_pll_tb_SRC		:= ../cores/snes/pll.vhd snes_pll_tb.vhd
 snes_pll_cfg_tb_SRC	:= ../cores/snes/pll_cfg.vhd snes_pll_cfg_tb.vhd
 clk_pulse_div_tb_SRC	:= $(HDL)/clk_pulse_div.vhd clk_pulse_div_tb.vhd
+axi_reset_sync_tb_SRC	:= $(HDL)/axi_reset_sync.vhd axi_reset_sync_tb.vhd
 audio_i2s_simple_tb_NEEDS	= $(HDMI_TX)/i2s_rx.vhd
 audio_i2s_simple_tb_SRC	= $(HDL)/audio_i2s_simple.vhd $(HDMI_TX)/i2s_rx.vhd audio_i2s_simple_tb.vhd
 n64_cpu_mul_tb_SRC	:= ../cores/n64/cpu_mul.vhd n64_cpu_mul_tb.vhd
@@ -111,15 +112,16 @@ psx_savestates_fast_tb_NEEDS	:= $(psx_savestates_tb_NEEDS)
 psx_savestates_fast_tb_PRE	:= sed 's/\bsavestates\b/savestates_orig/g' $(PSX_RTL)/savestates.vhd \
 			   > $(WORK)/psx_savestates_fast_tb/savestates_orig.vhd
 psx_savestates_fast_tb_SRC	:= $(WORK)/psx_savestates_fast_tb/savestates_orig.vhd ../cores/psx/savestates.vhd psx_savestates_tb.vhd
-psx_pll_tb_UNISIM	:= MMCME2_ADV.vhd MMCME2_BASE.vhd PLLE2_ADV.vhd PLLE2_BASE.vhd BUFGCTRL.vhd BUFG.vhd
+psx_pll_tb_UNISIM	:= MMCME2_ADV.vhd MMCME2_BASE.vhd PLLE2_ADV.vhd PLLE2_BASE.vhd BUFGCTRL.vhd BUFG.vhd BUFGCE.vhd
 psx_pll_tb_FLAGS	:= -fsynopsys -Wno-hide
-psx_pll_tb_SRC		:= $(HDL)/pll_reset.vhd ../cores/psx/pll.vhd ../cores/psx/pll2.vhd ../cores/psx/pll_cfg.vhd psx_pll_tb.vhd
-n64_pll_tb_SRC		:= $(HDL)/pll_reset.vhd ../cores/n64/pll.vhd ../cores/n64/pll2.vhd ../cores/n64/pll_cfg_small.vhd n64_pll_tb.vhd
+psx_pll_tb_SRC		:= $(HDL)/pll_reset.vhd $(HDL)/clk_safe_start.vhd ../cores/psx/pll.vhd ../cores/psx/pll2.vhd ../cores/psx/pll_cfg.vhd psx_pll_tb.vhd
+n64_pll_tb_SRC		:= $(HDL)/pll_reset.vhd $(HDL)/clk_safe_start.vhd ../cores/n64/pll.vhd ../cores/n64/pll2.vhd ../cores/n64/pll_cfg_small.vhd n64_pll_tb.vhd
 video_pll_tb_SRC	:= $(HDL)/pll_reset.vhd $(HDL)/video_pll.vhd video_pll_tb.vhd
 altsyncram_tb_SRC		:= $(HDL)/intel/altsyncram.vhd altsyncram_tb.vhd
 altdpram_tb_SRC		:= $(HDL)/intel/altdpram.vhd altdpram_tb.vhd
 lpm_mult_tb_SRC		:= $(HDL)/intel/lpm_mult.vhd lpm_mult_tb.vhd
 altddio_out_tb_SRC		:= $(HDL)/intel/altddio_out.vhd altddio_out_tb.vhd
+async_word_fifo_tb_SRC	:= $(HDL)/async_word_fifo.vhd async_word_fifo_tb.vhd
 avl_axi_bridge_tb_SRC	:= $(HDL)/avl_axi_bridge.vhd axi3_mem_model.vhd avl_axi_bridge_tb.vhd
 avl_axi_bridge_err_tb_SRC	:= $(avl_axi_bridge_tb_SRC)
 avl_axi_bridge_werr_tb_SRC	:= $(avl_axi_bridge_tb_SRC)
@@ -134,7 +136,7 @@ sdram_cache_tb_SRC		:= $(HDL)/sdram_cache.vhd $(HDL)/avl_axi_bridge.vhd axi3_mem
 sdram_cache_split_tb_SRC	:= $(sdram_cache_tb_SRC)
 mister_zynq_tb_SRC	:= $(HDL)/core_clock_stall.vhd $(HDL)/sdram_emu.vhd $(HDL)/sdram_region.vhd $(HDL)/sdram_bram.vhd \
 					   $(HDL)/sdram_cache.vhd $(HDL)/avl_axi_bridge.vhd $(HDL)/hps_bus_axi.vhd $(HDL)/perf_counters.vhd \
-					   $(HDL)/pll_reset.vhd $(HDL)/video_pll.vhd axi3_mem_model.vhd mister_zynq_tb_pkg.vhd sys_top_zynq_stub.vhd $(HDL)/mister_zynq.vhd mister_zynq_tb.vhd
+					   $(HDL)/pll_reset.vhd $(HDL)/video_pll.vhd $(HDL)/axi_reset_sync.vhd axi3_mem_model.vhd mister_zynq_tb_pkg.vhd sys_top_zynq_stub.vhd $(HDL)/mister_zynq.vhd mister_zynq_tb.vhd
 mister_zynq_noreg_tb_SRC	:= $(mister_zynq_tb_SRC)
 mister_zynq_free_tb_SRC	:= $(mister_zynq_tb_SRC)
 mister_zynq_hp2err_tb_SRC	:= $(mister_zynq_tb_SRC)
@@ -155,7 +157,7 @@ VHDL2008_ONLY	:= ../cores/n64/RDP_CombineAlpha.vhd
 VHDL93_SRC	:= $(HDL)/intel/altsyncram.vhd $(HDL)/intel/altdpram.vhd $(HDL)/intel/lpm_mult.vhd \
 			   $(HDL)/intel/altddio_out.vhd $(HDL)/avl_axi_bridge.vhd \
 			   $(HDL)/core_clock_stall.vhd $(HDL)/clk_pulse_div.vhd $(HDL)/sdram_emu.vhd $(HDL)/sdram_bram.vhd $(HDL)/sdram_region.vhd \
-			   $(HDL)/sdram_cache.vhd $(HDL)/hps_bus_axi.vhd $(HDL)/perf_counters.vhd $(HDL)/pll_reset.vhd $(HDL)/video_pll.vhd $(HDL)/mister_zynq.vhd \
+			   $(HDL)/sdram_cache.vhd $(HDL)/hps_bus_axi.vhd $(HDL)/perf_counters.vhd $(HDL)/pll_reset.vhd $(HDL)/clk_safe_start.vhd $(HDL)/video_pll.vhd $(HDL)/axi_reset_sync.vhd $(HDL)/mister_zynq.vhd \
 			   $(HDMI_TX_SRC) $(filter-out $(VHDL2008_ONLY),$(wildcard ../cores/*/*.vhd))
 
 .PHONY: all vhdl93 $(BENCHES)

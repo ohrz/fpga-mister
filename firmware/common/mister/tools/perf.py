@@ -9,7 +9,9 @@
 # ----------------------------------------------------------------------------------
 #  Description: Runs on the board (root): perf.py [<windows>] (default 1). Reads the
 #               snapshot of perf_counters in mister_zynq (aux words of hps_bus_axi at
-#               0x40000010: seq and 11 or 16 counts over a window of master cycles)
+#               GP0 + 0x10, GP0 0x40000000 on Zynq-7000, HPM0_FPD 0xA0000000 on ZynqMP
+#               (compatible of the device tree): seq and 11 or 16 counts over a window of
+#               master cycles)
 #               once per window and prints what the core lost and why. "hits" counts
 #               every read once (a miss after its line fetch), so the miss rate is
 #               misses / reads. Designs since the miss classes have 16 counts (reads
@@ -114,15 +116,25 @@ def report(seq, c, master_hz):
         print("  hint: " + h)
 
 
+def bus_base():
+    """Address of hps_bus_axi: GP0 on Zynq-7000, HPM0_FPD on ZynqMP (the board's device tree)."""
+    try:
+        compat = open("/proc/device-tree/compatible", "rb").read()
+    except OSError:
+        compat = b""
+    return 0xA0000000 if b"xlnx,zynqmp" in compat else 0x40000000
+
+
 def main():
     global NAMES
     if open("/sys/class/fpga_manager/fpga0/state").read().strip() != "operating":
         sys.exit("perf.py: PL not configured")
+    base = bus_base()
     fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
-    mem = mmap.mmap(fd, 4096, mmap.MAP_SHARED, mmap.PROT_READ, offset=0x40000000)
+    mem = mmap.mmap(fd, 4096, mmap.MAP_SHARED, mmap.PROT_READ, offset=base)
     reg = memoryview(mem).cast("I")                 # 32-bit loads
     if reg[2] != 0x5A4D5354:
-        sys.exit("perf.py: no hps_bus_axi at 0x40000000")
+        sys.exit("perf.py: no hps_bus_axi at 0x%08X" % base)
     if reg[18] == 0x5A4D5354:                       # 0x48 mirrors ID: 6 address bits, 11 counts
         NAMES = NAMES[:11]
 

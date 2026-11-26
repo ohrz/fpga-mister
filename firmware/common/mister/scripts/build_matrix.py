@@ -65,11 +65,16 @@ def parse_route(text):
 
 
 def parse_util(text):
-    """LUT, FF, BRAM tiles, DSP of report_utilization (placed)."""
-    def cell(name):
-        m = re.search(r"^\|\s*%s\s*\|\s*([\d.]+)\s*\|" % re.escape(name), text, re.M)
-        return float(m.group(1)) if m else None
-    lut, ff, bram, dsp = cell("Slice LUTs"), cell("Slice Registers"), cell("Block RAM Tile"), cell("DSPs")
+    """LUT, FF, BRAM tiles, DSP of report_utilization (placed); 7 series names the logic
+    "Slice LUTs"/"Slice Registers", UltraScale+ "CLB LUTs"/"CLB Registers"."""
+    def cell(*names):
+        for name in names:
+            m = re.search(r"^\|\s*%s\s*\|\s*([\d.]+)\s*\|" % re.escape(name), text, re.M)
+            if m:
+                return float(m.group(1))
+        return None
+    lut, ff = cell("Slice LUTs", "CLB LUTs"), cell("Slice Registers", "CLB Registers")
+    bram, dsp = cell("Block RAM Tile"), cell("DSPs")
     return dict(lut=None if lut is None else int(lut), ff=None if ff is None else int(ff), bram=bram,
                 dsp=None if dsp is None else int(dsp))
 
@@ -207,8 +212,19 @@ def boards_and_cores(root, only_boards=(), only_cores=()):
     return out
 
 
-def design_name(board, core, video):
-    return "%s_%s%s" % (board, core, "_hdmi" if video == "hdmi" else "")
+def has_video_tx(root, board):
+    """The board has dvi/hdmi variants of its designs (VIDEO_TX in platform.mk, e.g. the Zybo);
+    without it the design is <board>_<core> and VIDEO is not passed (ZCU106: HDMI only)."""
+    mk = os.path.join(root, "firmware/targets", board, "platform.mk")
+    try:
+        with open(mk, encoding="utf-8") as f:
+            return any(re.match(r"\s*VIDEO_TX\s*[:?+]?=", line) for line in f)
+    except OSError:
+        return False
+
+
+def design_name(board, core, video, variants=True):
+    return "%s_%s%s" % (board, core, "_hdmi" if variants and video == "hdmi" else "")
 
 
 def vivado_ver(root, board):
@@ -257,12 +273,15 @@ def main(argv):
     results, rows = [], []
     setup_done = set()
     for board, core in pairs:
-        design = design_name(board, core, video)
+        variants = has_video_tx(root, board)
+        design = design_name(board, core, video, variants)
         hw = os.path.join(root, "firmware/build", board, vivado_ver(root, board), "hw")
         impl = os.path.join(hw, design, design + ".runs", "impl_1")
         build_ok, used = True, commit
         if not report_only:
-            env = "PLATFORM=%s FLOW=vivado CORE=%s VIDEO=%s VIVADO_JOBS=%s" % (board, core, video, jobs)
+            env = "PLATFORM=%s FLOW=vivado CORE=%s VIVADO_JOBS=%s" % (board, core, jobs)
+            if variants:
+                env += " VIDEO=" + video
             scope = ["systemd-run", "--user", "--scope", "--quiet", "-p", "MemoryMax=" + mem,
                      "-p", "MemorySwapMax=0"]
             cmds = []

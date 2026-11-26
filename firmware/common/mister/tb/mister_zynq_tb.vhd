@@ -74,6 +74,7 @@ architecture tb of mister_zynq_tb is
 
   signal clk_100, clk_50, clk_master, clk_hdmi, clk_audio : std_logic := '0';
   signal aresetn : std_logic := '0';
+  signal ps_seen : boolean := false;           -- the bench made an AXI-Lite request since aresetn
   signal done    : boolean := false;
 
   signal awaddr, araddr : std_logic_vector(6 downto 0) := (others => '0');
@@ -308,8 +309,15 @@ begin
 
   cm_mon : process
     variable na, nr : natural := 0;
+    -- the bridge reset inside the DUT: the stub's first COREMEM command only follows the DDRAM
+    -- sequence, after the first AXI-Lite request, so the hold is checked on the reset itself
+    alias cm_rst is <<signal dut.cm_rst : std_logic>>;
   begin
     wait until rising_edge(cm_clk_tb);
+    assert not G_COREMEM or ps_seen or cm_rst = '1'
+      report "HP3 bridge out of reset before the first AXI-Lite request" severity failure;
+    assert ps_seen or (c_awvalid /= '1' and c_arvalid /= '1')
+      report "HP3 AW/AR before the first AXI-Lite request" severity failure;
     if c_awvalid = '1' and c_awready = '1' then
       if na = 0 then
         assert unsigned(c_awaddr) = unsigned(P_BASE) + unsigned(CM_ADDR) * 8 report "HP3 write address " &
@@ -340,6 +348,8 @@ begin
     variable na, nr : natural := 0;
   begin
     wait until rising_edge(dd_clk_tb);
+    assert ps_seen or (d_awvalid /= '1' and d_arvalid /= '1')
+      report "HP2 AW/AR before the first AXI-Lite request" severity failure;
     if d_awvalid = '1' and d_awready = '1' then
       if na = 0 then
         assert unsigned(d_awaddr) = unsigned(DD_ADDR) * 8 report "HP2 write address " & to_hstring(d_awaddr)
@@ -474,6 +484,17 @@ begin
     wait;
   end process;
 
+  process (clk_100)
+  begin
+    if rising_edge(clk_100) then
+      if aresetn = '0' then
+        ps_seen <= false;
+      elsif arvalid = '1' or awvalid = '1' then
+        ps_seen <= true;
+      end if;
+    end if;
+  end process;
+
   ------------------------------------------------------------------------------
   -- AXI-Lite master: hps_bus_axi
   ------------------------------------------------------------------------------
@@ -527,7 +548,8 @@ begin
     aresetn <= '0';
     for i in 1 to 20 loop wait until rising_edge(clk_100); end loop;
     aresetn <= '1';
-    for i in 1 to 50 loop wait until rising_edge(clk_100); end loop;
+    -- long enough for the stub's DDRAM burst, which the DUT holds until this first request
+    for i in 1 to 500 loop wait until rising_edge(clk_100); end loop;
 
     axil_read(16#8#, d);
     assert d = x"5A4D5354" report "ID register " & to_hstring(d) severity failure;
@@ -599,8 +621,13 @@ begin
       assert status_err = '1' or G_HP_ERR /= 2 report "HP3 error response not on status_err" severity failure;
       assert cm_aw_n = 2 and cm_ar_n = 2 report "HP3 bursts: " & integer'image(cm_aw_n) & " AW, " &
         integer'image(cm_ar_n) & " AR, expected 2 and 2" severity failure;
+      -- aux word 19: HP3 read beats requested (31:16) and received (15:0)
+      axil_read(16#5C#, d);
+      assert d = x"00020002" report "HP3 beat counters " & to_hstring(d) & ", expected 00020002" severity failure;
     else
       assert cm_aw_n = 0 and cm_ar_n = 0 report "HP3 active without G_COREMEM" severity failure;
+      axil_read(16#5C#, d);
+      assert d = x"00000000" report "HP3 beat counters without G_COREMEM " & to_hstring(d) severity failure;
     end if;
 
     -- quiescing (all bridges idle after the sequences): CTRL bit 0 -> STATUS bit 2, no HP request

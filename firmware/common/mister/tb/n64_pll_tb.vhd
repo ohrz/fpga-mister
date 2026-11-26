@@ -27,10 +27,13 @@
 --     each period within 0.1 ns of it, in this order
 --       start (no write)            NTSC 20.5405 ns (48.684211 MHz) +- 1 ps
 --       PAL divider to address 0    still NTSC (only address 7 counts)
---       PAL divider to address 7    PAL  20.1386 ns (49.655963 MHz) +- 1 ps
+--       PAL divider to address 7    PAL  20.1382 ns (49.657534 MHz) +- 1 ps
 --       MPAL divider to address 7   NTSC again
 --     from the first lock on no high or low phase of clk_vid shorter than
 --     9.9 ns (glitch-free switch); waitrequest '0' at every write
+--     safe start: no rising edge of the core clocks while locked is '0';
+--     locked rises at least 200 refclk periods after the MMCM's LOCKED;
+--     the same after a pulse on rst (lock loss) at the end, then a relock
 --   Ends with "PASS" or a failure.  VHDL-2008 (ghdl --std=08).
 -------------------------------------------------------------------------------
 -- Copyright (c) 2026 by OHRZ
@@ -112,6 +115,20 @@ begin
     wait;
   end process;
 
+  -- safe start (clk_safe_start): no rising edge of a core clock while locked is '0', and
+  -- locked (the enable of the BUFGCE outputs) only after the MMCM's own LOCKED
+  process (clk_1x, clk_93, clk_2x, locked)
+    alias lock_i is <<signal .n64_pll_tb.dut.lock_i : std_logic>>;
+  begin
+    if rising_edge(clk_1x) or rising_edge(clk_93) or rising_edge(clk_2x) then
+      assert locked = '1' report "core clock edge while locked is '0' (safe start)" severity failure;
+    end if;
+    if rising_edge(locked) then
+      assert lock_i = '1' and lock_i'stable(200 * 20 ns)
+        report "locked less than 200 refclk periods after the MMCM's LOCKED" severity failure;
+    end if;
+  end process;
+
   -- grid check of one pll output: rising edges at t0 + k * period, high time period / 2
   grid : for i in 0 to 2 generate
     signal c : std_logic;
@@ -159,7 +176,7 @@ begin
   process
     alias locked2 is <<signal .n64_pll_tb.dut2.lock_i : std_logic>>;
     constant P_NTSC : time := 20540.54 ps;  -- 925 MHz / 19
-    constant P_PAL  : time := 20138.57 ps;  -- 676.5625 MHz / 13.625
+    constant P_PAL  : time := 20138.16 ps;  -- 906.25 MHz / 18.25
     constant DSM_PAL  : std_logic_vector(31 downto 0) := x"F02C4355";   -- VCLK_DSM_PAL of N64.sv
     constant DSM_MPAL : std_logic_vector(31 downto 0) := x"C0CB062C";   -- VCLK_DSM_MPAL
 
@@ -242,6 +259,18 @@ begin
       boolean'image(ok_grid(2)) & ", clk_vid " & boolean'image(ok_vid) & ", reset " & boolean'image(ok_rst)
       severity failure;
     assert sdram_clk = '0' report "outclk_3 not '0'" severity failure;
+    -- lock loss: rst stops the MMCMs (LOCKED and the enable clocks with them); after it they
+    -- start again with clocks before the lock, which must not pass (the safe-start check
+    -- above), and locked must come back
+    rst <= '1';
+    wait for 2 us;
+    rst <= '0';
+    wait until locked = '0' for 1 us;
+    assert locked = '0' report "locked still '1' after the MMCM reset" severity failure;
+    wait until locked = '1' for 400 us;
+    assert locked = '1' report "no lock again after the MMCM reset" severity failure;
+    wait until rising_edge(clk_1x) for 1 us;
+    assert clk_1x'event report "clk_1x does not run again after the relock" severity failure;
     report "PASS";
     std.env.finish;                         -- a stopped refclk makes the MMCM model fail
     wait;

@@ -4,8 +4,10 @@ Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
 Company    : OHRZ
 Created    : 2026-10-28
 Description:
-  The HPS GPO/GPI registers of the Cyclone V become the PL bus hps_bus_axi on M_AXI_GP0 at
-  0x40000000 (GPO 0x0, GPI 0x4, ID 0x8 = 0x5A4D5354). Cores are loaded through the Linux
+  The HPS GPO/GPI registers of the Cyclone V become the PL bus hps_bus_axi (GPO 0x0, GPI 0x4,
+  ID 0x8 = 0x5A4D5354): on M_AXI_GP0 at 0x40000000 (Zynq-7000), on M_AXI_HPM0_FPD at 0xA0000000
+  when the device tree is compatible with "xlnx,zynqmp"; MISTER_ZYNQ_REG_BASE overrides it.
+  Cores are loaded through the Linux
   fpga_manager (sysfs flags/firmware, payload in /lib/firmware/mister/core.bin: a byte-swapped
   Xilinx .bin in the .rbf file, the "MiSTer" container header stays supported). GP0 is only
   accessed while fpga_manager reports "operating" and the ID register answers: an access to an
@@ -14,10 +16,10 @@ Description:
   config of a core (u-boot core loader) is ignored. The Cyclone V code stays as it is without ZYNQ.
 
 diff --git a/fpga_io.cpp b/fpga_io.cpp
-index b64cfe5..8880098 100644
+index b64cfe5..6ee5e25 100644
 --- a/fpga_io.cpp
 +++ b/fpga_io.cpp
-@@ -17,6 +17,90 @@
+@@ -17,6 +17,123 @@
  #include "shmem.h"
  #include "offload.h"
  
@@ -25,10 +27,14 @@ index b64cfe5..8880098 100644
 +#include <sys/syscall.h>
 +#include <linux/reboot.h>
 +
-+// Zynq-7000 (fpga-mister): the PL bus hps_bus_axi on M_AXI_GP0 replaces the HPS GPO/GPI
-+// registers (GPO at 0x0, GPI at 0x4, ID at 0x8). The PL is configured by the Linux
-+// fpga_manager; GP0 must not be touched while the PL is not configured (the access hangs).
-+#define FPGA_REG_BASE 0x40000000
++// Zynq (fpga-mister): the PL bus hps_bus_axi replaces the HPS GPO/GPI registers (GPO at 0x0,
++// GPI at 0x4, ID at 0x8). Zynq-7000: M_AXI_GP0 at 0x40000000; ZynqMP: M_AXI_HPM0_FPD at
++// 0xA0000000 (device tree compatible "xlnx,zynqmp"); MISTER_ZYNQ_REG_BASE overrides both.
++// The PL is configured by the Linux fpga_manager; the bus must not be touched while the PL is
++// not configured (the access hangs).
++#define FPGA_REG_BASE_ZYNQ   0x40000000
++#define FPGA_REG_BASE_ZYNQMP 0xA0000000
++#define FPGA_REG_BASE zynq_reg_base()
 +#define FPGA_REG_SIZE 0x1000
 +#define ZYNQ_REG_GPO  (0x0 / 4)
 +#define ZYNQ_REG_GPI  (0x4 / 4)
@@ -41,6 +47,35 @@ index b64cfe5..8880098 100644
 +
 +static volatile uint32_t *map_base;
 +static int pl_ok = 0;
++
++static uint32_t zynq_reg_base()
++{
++	static uint32_t base = 0;
++	if (base) return base;
++
++	const char *env = getenv("MISTER_ZYNQ_REG_BASE");
++	if (env && *env)
++	{
++		base = (uint32_t)strtoul(env, NULL, 0);
++		return base;
++	}
++
++	// the compatible list is NUL-separated: look at every entry
++	base = FPGA_REG_BASE_ZYNQ;
++	char buf[512];
++	int fd = open("/proc/device-tree/compatible", O_RDONLY);
++	if (fd >= 0)
++	{
++		int n = read(fd, buf, sizeof(buf) - 1);
++		close(fd);
++		for (int i = 0; i < n; i += strlen(buf + i) + 1)
++		{
++			buf[n] = 0;
++			if (!strcmp(buf + i, "xlnx,zynqmp")) base = FPGA_REG_BASE_ZYNQMP;
++		}
++	}
++	return base;
++}
 +
 +static int zynq_sysfs_read(const char *attr, char *buf, int size)
 +{
@@ -108,7 +143,7 @@ index b64cfe5..8880098 100644
  #include "fpga_base_addr_ac5.h"
  #include "fpga_manager.h"
  #include "fpga_system_manager.h"
-@@ -423,6 +507,8 @@ static int make_env(const char *name, const char *cfg)
+@@ -423,6 +540,8 @@ static int make_env(const char *name, const char *cfg)
  	return 0;
  }
  
@@ -117,7 +152,7 @@ index b64cfe5..8880098 100644
  int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
  {
  	OsdDisable();
-@@ -431,10 +517,15 @@ int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
+@@ -431,10 +550,15 @@ int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
  
  	if(cfg)
  	{
@@ -133,7 +168,7 @@ index b64cfe5..8880098 100644
  	}
  
  	printf("Loading RBF: %s\n", name);
-@@ -486,6 +577,13 @@ int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
+@@ -486,6 +610,13 @@ int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
  						sz = *(uint32_t*)(((uint8_t*)buf) + 12);
  						p = (void*)(((uint8_t*)buf) + 16);
  					}
@@ -147,7 +182,7 @@ index b64cfe5..8880098 100644
  					do_bridge(0);
  					ret = socfpga_load(p, sz);
  					if (ret)
-@@ -496,6 +594,7 @@ int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
+@@ -496,6 +627,7 @@ int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
  					{
  						do_bridge(1);
  					}
@@ -155,7 +190,7 @@ index b64cfe5..8880098 100644
  				}
  				free(buf);
  			}
-@@ -511,9 +610,38 @@ static uint32_t gpo_copy = 0;
+@@ -511,9 +643,38 @@ static uint32_t gpo_copy = 0;
  void inline fpga_gpo_write(uint32_t value)
  {
  	gpo_copy = value;
@@ -185,7 +220,7 @@ index b64cfe5..8880098 100644
 +int fpga_io_init()
 +{
 +	pl_ok = zynq_pl_check();
-+	if (!pl_ok) printf("No MiSTer design in the PL (fpga_manager state, ID register at 0x%08X)\n", FPGA_REG_BASE);
++	if (!pl_ok) printf("No MiSTer design in the PL (fpga_manager state, ID register at 0x%08X)\n", (unsigned)FPGA_REG_BASE);
 +
 +	fpga_gpo_write(0);
 +	return 0;
@@ -194,7 +229,7 @@ index b64cfe5..8880098 100644
  #define fpga_gpo_writeN(value) writel((value), (void*)(SOCFPGA_MGR_ADDRESS + 0x10))
  #define fpga_gpo_read() gpo_copy //readl((void*)(SOCFPGA_MGR_ADDRESS + 0x10))
  #define fpga_gpi_read() (int)readl((void*)(SOCFPGA_MGR_ADDRESS + 0x14))
-@@ -537,6 +665,7 @@ int fpga_io_init()
+@@ -537,6 +698,7 @@ int fpga_io_init()
  	fpga_gpo_write(0);
  	return 0;
  }
@@ -202,7 +237,7 @@ index b64cfe5..8880098 100644
  
  int fpga_core_id()
  {
-@@ -592,6 +721,12 @@ void reboot(int cold)
+@@ -592,6 +754,12 @@ void reboot(int cold)
  
  	usleep(500000);
  
@@ -215,7 +250,7 @@ index b64cfe5..8880098 100644
  	void* buf = shmem_map(0x1FFFF000, 0x1000);
  	if (buf)
  	{
-@@ -602,6 +737,7 @@ void reboot(int cold)
+@@ -602,6 +770,7 @@ void reboot(int cold)
  	}
  
  	writel(1, &reset_regs->ctrl);
@@ -223,7 +258,7 @@ index b64cfe5..8880098 100644
  	while (1) sleep(1);
  }
  
-@@ -659,7 +795,11 @@ int is_fpga_ready(int quick)
+@@ -659,7 +828,11 @@ int is_fpga_ready(int quick)
  		return (fpga_gpi_read() >= 0);
  	}
  
@@ -235,7 +270,7 @@ index b64cfe5..8880098 100644
  }
  
  #define SSPI_STROBE  (1<<17)
-@@ -678,17 +818,32 @@ void fpga_wait_to_reset()
+@@ -678,17 +851,32 @@ void fpga_wait_to_reset()
  
  	fpga_core_reset(1);
  
