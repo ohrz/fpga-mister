@@ -15,8 +15,9 @@
 #                 3. make -n of every flow x board x action: a board a flow supports
 #                    must dry-run every action of that flow, every other board must be
 #                    refused with the "not supported by this flow" message
-#                 4. the GHDL testbenches of the own VHDL (firmware/common/mister/tb) and of the
-#                    HDMI transmitter (firmware/common/ip/hdmi-tx)
+#                 4. the GHDL testbenches of the own VHDL (firmware/common/mister/tb, the board
+#                    parts in firmware/targets/<board>/tb) and of the HDMI transmitter
+#                    (firmware/common/ip/hdmi-tx)
 #                 5. the patches of the port (cores/<core>/patches, patches/<checkout>) apply
 #                    to the pinned checkout in _Checkouts (git apply one after the other on
 #                    an export of the pin, as prepare_sources.py does: several patches may
@@ -127,6 +128,16 @@ if [ "${GHDL:-1}" = 1 ] && command -v ghdl >/dev/null; then
     else
         failed "testbenches"; echo "$out" | grep -E 'FAIL|failure|error' | sed 's/^/      /'
     fi
+    # board-specific VHDL (firmware/targets/<board>/tb)
+    for tb in firmware/targets/*/tb/Makefile; do
+        [ -f "$tb" ] || continue
+        b=$(basename "$(dirname "$(dirname "$tb")")")
+        if out=$(make -s -C "$(dirname "$tb")" 2>&1); then
+            grep -E '^[A-Za-z0-9_.]+( --selftest)?: PASS$' <<<"$out" | sed "s/^/   $b /"
+        else
+            failed "testbenches of $b"; grep -E 'FAIL|failure|error' <<<"$out" | sed 's/^/      /'
+        fi
+    done
     if out=$(make -s -C firmware/common/ip/hdmi-tx/tb WORK="$root/firmware/build/tb/hdmi-tx" 2>&1); then
         grep -E '^[A-Za-z0-9_]+: (PASS|NOT RUN.*)$' <<<"$out" | sed 's/^/   hdmi-tx /'
     else

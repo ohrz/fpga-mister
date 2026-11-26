@@ -21,7 +21,9 @@
 #        (VHDL_INPUT_VERSION VHDL_2008 in the core's .qsf) the VHDL files of the
 #        core's .qip lists are read as VHDL 2008, and the replacement files the
 #        profile lists in core_vhdl2008 as well
-#     4. adds the core constraints (before the board's, see cores/<core>/core.xdc)
+#     4. adds the core constraints (before the board's, see cores/<core>/core.xdc), and on
+#        an UltraScale(+) part also core_xdc_ultrascale of the profile (implementation only:
+#        clock placement rules of that family, e.g. MMCM cascades, see mister_ultrascale)
 #     5. sets the Verilog macros of the core (core_defines, the VERILOG_MACRO lines
 #        of its .qsf) on sources_1, so the module reference elaborates with them
 #   and returns a dict: name, generics (mister_zynq generics as a name value list),
@@ -40,8 +42,10 @@
 #     if {[mister_ddram $core]} { ... S_AXI_HP2 for mister/m_axi_ddram ... }
 #     if {[mister_coremem $core]} { ... S_AXI_HP3 for mister/m_axi_coremem ... }
 #     if {[mister_direct_video $core]} { ... transmitter on mister/vid_clk, vid_clk_ser ... }
+#     if {![mister_free_clk $core]} { ... constraints of the gated master clock core_buf ... }
 #     ... make_wrapper ...
 #     mister_runs $core design_1.bd <project dir> {clk_100 10.0 clk_50 20.0 ...}
+#     mister_extra_xdc       ;# after the board constraints: LAB_EXTRA_XDC_<board> of the lab
 #-----------------------------------------------------------------------------
 
 source [file join [file dirname [info script]] qip.tcl]
@@ -53,6 +57,13 @@ namespace eval mister_project {
                     */sys/sys_top.v */sys/sysmem.sv */sys/f2sdram_safe_terminator.sv}
 }
 
+# 1 when the project's part is an UltraScale or UltraScale+ device (MMCME4/MMCME3, clock regions with
+# their own global buffers), 0 for 7 series
+proc mister_ultrascale {} {
+  set arch [get_property ARCHITECTURE [get_parts [get_property PART [current_project]]]]
+  return [expr {[string match *plus* $arch] || $arch in {kintexu virtexu}}]
+}
+
 proc mister_core_add {root core} {
   set m $::mister_project::dir
   # optional in a profile
@@ -62,6 +73,7 @@ proc mister_core_add {root core} {
   set core_ooc_timing 0
   set core_synth_options {}
   set core_impl_props {}
+  set core_xdc_ultrascale {}
   source [file join $m cores $core core.tcl]
   set src [file join $root _Checkouts $core_name]
   set dst [file join $root firmware build src $core_name]
@@ -111,6 +123,13 @@ proc mister_core_add {root core} {
   foreach f $core_vhdl2008 { set_property file_type {VHDL 2008} [get_files [file join $m $f]] }
   set_property include_dirs $incdirs [get_filesets sources_1]
   foreach f $core_xdc { add_files -fileset constrs_1 -norecurse [file join $m $f] }
+  if {[mister_ultrascale]} {
+    foreach f $core_xdc_ultrascale {
+      set x [file join $m $f]
+      add_files -fileset constrs_1 -norecurse $x
+      set_property USED_IN_SYNTHESIS false [get_files $x]
+    }
+  }
   if {[llength $core_defines]} {
     set_property verilog_define $core_defines [get_filesets sources_1]
   }
@@ -187,9 +206,36 @@ proc mister_coremem {core} {
   return [expr {[dict exists $g G_COREMEM] && [dict get $g G_COREMEM] != 0}]
 }
 
+# 1 when the profile sets G_FREE_CLK (the core gets clk_master itself): mister_zynq then has no
+# stage C, so no gated master clock core_buf and no core clocks cascaded behind it; board
+# constraints for those cells only apply without it
+proc mister_free_clk {core} {
+  set g [dict get $core generics]
+  return [expr {[dict exists $g G_FREE_CLK] && [dict get $g G_FREE_CLK] != 0}]
+}
+
 # 1 when the profile sets G_DIRECT_VIDEO (sys_top without ascal, MISTER_DEBUG_NOHDMI): the board
 # generator then clocks the HDMI transmitter with mister/vid_clk, vid_clk_ser, vid_locked
 proc mister_direct_video {core} {
   set g [dict get $core generics]
   return [expr {[dict exists $g G_DIRECT_VIDEO] && [dict get $g G_DIRECT_VIDEO] != 0}]
+}
+
+# more constraints of one board unit (environment MISTER_EXTRA_XDC, set by FLOW=vivado make create
+# from LAB_EXTRA_XDC_<board> in firmware/common/lab.mk or lab.local.mk): a space-separated list of
+# absolute XDC paths, added for the implementation only and read after the other constraints.
+# A missing file stops the script, so a design never builds without them by mistake.
+# Returns the list of the added files.
+proc mister_extra_xdc {} {
+  if {![info exists ::env(MISTER_EXTRA_XDC)]} { return {} }
+  set added {}
+  foreach f $::env(MISTER_EXTRA_XDC) {
+    if {![file isfile $f]} { error "mister_extra_xdc: $f does not exist (LAB_EXTRA_XDC_<board> in lab.local.mk)" }
+    set x [add_files -fileset constrs_1 -norecurse $f]
+    set_property USED_IN_SYNTHESIS false $x
+    set_property PROCESSING_ORDER LATE $x
+    lappend added $f
+    puts "INFO: mister_extra_xdc: $f (implementation)"
+  }
+  return $added
 }

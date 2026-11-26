@@ -111,7 +111,13 @@ endif
 	cp -r firmware/targets/$(PLATFORM)/board_files firmware/build/$(PLATFORM)/
 	cp -r firmware/targets/$(PLATFORM)/constraints firmware/build/$(PLATFORM)/
 
-	cd firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw; vivado -mode batch -notrace -source ../../../../targets/$(PLATFORM)/scripts/$(VIVADO_VER)/$(CREATE_TCL) -tclargs $(CREATE_ARGS)
+ifneq ($(VIVADO_IP_DIRS),)
+	cp -r $(addprefix firmware/targets/$(PLATFORM)/,$(VIVADO_IP_DIRS))  firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw/
+endif
+
+#	LAB_EXTRA_XDC_<platform> (firmware/common/lab.mk, lab.local.mk): more constraints of one board unit,
+#	the generator adds them for the implementation (mister_extra_xdc in mister_project.tcl)
+	cd firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw; MISTER_EXTRA_XDC='$(foreach f,$(LAB_EXTRA_XDC_$(PLATFORM)),$(abspath $(f)))' vivado -mode batch -notrace -source ../../../../targets/$(PLATFORM)/scripts/$(VIVADO_VER)/$(CREATE_TCL) -tclargs $(CREATE_ARGS)
 
 #-----------------------------------------------------------------------------
 # Build Vivado project

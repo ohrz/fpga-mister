@@ -83,6 +83,8 @@ update_ip_catalog
 source [file join $root_dir firmware common mister scripts mister_project.tcl]
 set core [mister_core_add $root_dir $core_id]
 add_files -fileset constrs_1 -norecurse [file join $target_dir constraints zybo-z7-20_mister.xdc]
+# more constraints of this board unit, if the lab names them (LAB_EXTRA_XDC_<board>, lab.mk)
+mister_extra_xdc
 if {$video_tx eq "hdmi"} {
   add_files -norecurse [glob [file join $hdmi_tx_src *.vhd]]
 }

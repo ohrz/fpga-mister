@@ -25,4 +25,17 @@ LAB_FALLBACK_DNS	?= $(LAB_NET_GATEWAY)
 LAB_NFS_CLIENTS		?= $(LAB_NET)
 
 # static addresses of the boards (network boot, uEnv.txt)
+LAB_BOARD_IP_kr260		?= 192.168.1.22
+LAB_BOARD_IP_zcu106		?= 192.168.1.21
 LAB_BOARD_IP_zybo-z7-20	?= 192.168.1.20
+# Linux from the SD card can take a DHCP lease that changes with every new card (machine-id):
+# a host name for the hardware tests and for ssh-keygen -R after make flash, empty = not used
+LAB_BOARD_HOST_zybo-z7-20 ?=
+
+# more constraints for one board unit of a lab (implementation only, FLOW=vivado make create):
+# a space-separated list of XDC files, relative to the repository root or absolute, for example
+#   LAB_EXTRA_XDC_kr260 := path/to/unit_placement.xdc
+# The generator stops if a file of the list does not exist. Empty for every board here.
+LAB_EXTRA_XDC_kr260		?=
+LAB_EXTRA_XDC_zcu106	?=
+LAB_EXTRA_XDC_zybo-z7-20 ?=
