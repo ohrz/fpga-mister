@@ -2,7 +2,7 @@
 
 ## Own work
 
-Everything in this repository that is not listed below is the own work of OHRZ (Konstantin Schmidt) and is
+Everything in this repository that is not listed below is the own work of OHRZ (Konstantin Schmidt). It is
 licensed under the GNU General Public License, version 2 or (at your option) any later version
 (SPDX `GPL-2.0-or-later`). Full text: [../LICENSE](../LICENSE), also [GPL-2.0.txt](GPL-2.0.txt).
 
@@ -16,9 +16,13 @@ licensed under the GNU General Public License, version 2 or (at your option) any
     even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
     General Public License for more details.
 
-GPL-2.0-or-later was chosen because the bitstreams combine this code with the MiSTer framework
-(Template_MiSTer `sys/`, GPL-2.0-or-later) and with cores under GPL-2.0 (PSX_MiSTer) as well as GPL-3.0
-(N64_MiSTer, SNES_MiSTer); "or later" keeps the code compatible with both.
+We chose GPL-2.0-or-later because the bitstreams combine this code with these parts:
+
+- the MiSTer framework (Template_MiSTer `sys/`, GPL-2.0-or-later)
+- cores under GPL-2.0 (PSX_MiSTer)
+- cores under GPL-3.0 (N64_MiSTer, SNES_MiSTer)
+
+"Or later" keeps the code compatible with GPL-2.0 and with GPL-3.0.
 
 ## Derived files
 
@@ -34,7 +38,7 @@ derived works and are distributed under the license of the respective upstream p
 | `firmware/common/mister/patches/Main_MiSTer/` | [Main_MiSTer](https://github.com/MiSTer-devel/Main_MiSTer) | GPL-3.0 | [GPL-3.0.txt](GPL-3.0.txt) |
 
 The other files of these core directories (`core.tcl`, `rules.py`, `core.xdc`, `pll*.vhd`, `hwtest.cfg`,
-documentation) are own work under GPL-2.0-or-later; where they are combined with a GPL-3.0 core, the
+documentation) are own work under GPL-2.0-or-later. Where these files are combined with a GPL-3.0 core, the
 combination is distributed under GPL-3.0.
 
 ## Third-party files
@@ -47,15 +51,20 @@ combination is distributed under GPL-3.0.
 
 ## Not included
 
-The following are cloned by the flows at pinned revisions (`firmware/common/checkouts.txt`) and are not
-redistributed here: Template_MiSTer, Main_MiSTer, Menu_MiSTer, MSX_MiSTer, N64_MiSTer, SNES_MiSTer,
-PSX_MiSTer (MiSTer-devel), vivado-library (Digilent), soc-prebuilt-firmware, linux-xlnx and u-boot-xlnx
-(AMD/Xilinx). Their licenses apply to them and to everything built from them.
+The flows clone the projects that follow at pinned revisions (`firmware/common/checkouts.txt`). This repository
+does not redistribute them:
 
-Note for MSX bitstreams: the core of MSX_MiSTer is based on the One Chip MSX / OCM-PLD sources (ESE
-MSX-SYSTEM3, Copyright (c) 2006 Kazuhiro Tsujikawa, ESE Artists' factory; OCM-PLD Pack by KdL), which carry their own
-BSD-style license with an additional condition that redistributions may not be sold or used commercially
-without permission (header of `rtl/emsx_top.vhd` in MSX_MiSTer). A bitstream containing them is subject to it.
+- Template_MiSTer, Main_MiSTer, Menu_MiSTer, MSX_MiSTer, N64_MiSTer, SNES_MiSTer, PSX_MiSTer (MiSTer-devel)
+- vivado-library (Digilent)
+- soc-prebuilt-firmware, linux-xlnx and u-boot-xlnx (AMD/Xilinx)
+
+Their licenses apply to them and to everything built from them.
+
+Note for MSX bitstreams: the core of MSX_MiSTer is based on the One Chip MSX / OCM-PLD sources. These are ESE
+MSX-SYSTEM3, Copyright (c) 2006 Kazuhiro Tsujikawa, ESE Artists' factory, and the OCM-PLD Pack by KdL. These sources
+carry their own BSD-style license. The license has an additional condition: redistributions may not be sold or used
+commercially without permission (header of `rtl/emsx_top.vhd` in MSX_MiSTer). A bitstream that contains these
+sources is subject to this license.
 
 Who wrote the upstream projects: [../README.md](../README.md#credits).
 

@@ -1,7 +1,7 @@
 # <Core> (<Checkout>_MiSTer)
 
-<What the core is, in one sentence>, checkout `<Checkout>_MiSTer` at the pin in `firmware/common/checkouts.txt`.
-What works where: [STATUS.md](STATUS.md).
+<What the core is, in one sentence>. The checkout `<Checkout>_MiSTer` is at the pin in
+`firmware/common/checkouts.txt`. What works where: [STATUS.md](STATUS.md).
 
 ## Build and test
 
@@ -14,9 +14,9 @@ The bitstream goes to `/media/fat/<_Console|_Computer|...>/<Core>.rbf`, games to
 
 | File | Content |
 |---|---|
-| `core.tcl` | <SDRAM geometry, regions, cache, pacer>; the header explains every value |
+| `core.tcl` | <SDRAM geometry, regions, cache, pacer>. The header explains each value. |
 | `rules.py` | <n> source rules for Vivado |
-| `patches/NNNN-<topic>.patch` | <changes of behaviour, one line each> |
+| `patches/NNNN-<topic>.patch` | <changes of behavior, one line for each> |
 | `pll.vhd` | replacement of the Quartus PLL |
 | `core.xdc` | generated clocks of `pll.vhd`, the path exceptions of the core's `.sdc` |
 | `hwtest.cfg` | game, input and frame rate of `make hwtest` |

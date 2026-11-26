@@ -1,11 +1,14 @@
 # firmware/common/mister – the board-neutral MiSTer port
 
-Everything here is shared by every board and every core. It is glue around the unmodified MiSTer framework and
-cores (authors: `README.md`, section "Credits"), not a replacement for them. Board files live in
-`firmware/targets/<platform>/`, upstream sources in `_Checkouts/` (pinned in
-`firmware/common/checkouts.txt`, never edited). The HDMI transmitter with sound (`hdmi_out`) is the
-separate component `firmware/common/ip/hdmi-tx`. How to port a further core: `doc/PORTING.md`;
-how the parts work: `doc/ARCHITECTURE.md`.
+All boards and all cores use the files in this directory. The files are glue around the unchanged MiSTer framework
+and cores (authors: `README.md`, section "Credits"). They do not replace the framework or the cores.
+
+- The board files are in `firmware/targets/<platform>/`.
+- The upstream sources are in `_Checkouts/`. They are pinned in `firmware/common/checkouts.txt`, and nobody edits
+  them.
+- The HDMI transmitter with sound (`hdmi_out`) is the separate component `firmware/common/ip/hdmi-tx`.
+
+How to port a further core: `doc/PORTING.md`. How the parts work: `doc/ARCHITECTURE.md`.
 
 ## Layout
 
@@ -24,6 +27,7 @@ how the parts work: `doc/ARCHITECTURE.md`.
       audio_i2s_simple.vhd    core audio straight to I2S instead of audio_out (MISTER_ZYNQ_SIMPLE_AUDIO)
       video_pll.vhd           pixel and serial clock from the core's CLK_VIDEO (direct video)
       pll_reset.vhd           reset sequencer of PLLs/MMCMs whose input starts late
+      clk_safe_start.vhd      MMCM outputs over BUFGCEs, enabled only after lock (PSX/N64 pll.vhd)
       intel/                  replacements of Intel megafunctions, same name, generics and ports
         altsyncram.vhd          subset used by MiSTer (asserts on anything else)
         altdpram.vhd, lpm_mult.vhd, altddio_out.vhd
@@ -40,6 +44,7 @@ how the parts work: `doc/ARCHITECTURE.md`.
       build_matrix.py         build every board x core design, timing rows (make build-matrix)
       impl_at_clock.tcl       implementation of a built design at other core MMCM rates (diagnosis)
       timing_groups.py        failing paths of impl_at_clock.tcl grouped by module
+      nfs-rootfs.sh           NFS root of a board as a MiSTer root (NFS_ROOT_SETUP of FLOW=boot tftpboot)
     tb/                     GHDL testbenches of hdl/ (make -C tb, part of make test)
     tools/                  scripts for the board (fps.py, perf.py, vkbd.py, vpad.py, grab_frame.sh,
                             n64speed.py, pair-ds5.sh) and
@@ -50,7 +55,7 @@ how the parts work: `doc/ARCHITECTURE.md`.
 
 | File | Required | Content |
 |---|---|---|
-| `core.tcl` | yes | `core_name` (checkout), `core_exclude`, `core_add`, `core_xdc`, `core_master_mhz`, `core_defines`, `core_generics` (generics of `mister_zynq`); optional `core_vhdl_std 2008`, `core_expect_bram` |
+| `core.tcl` | yes | `core_name` (checkout), `core_exclude`, `core_add`, `core_xdc`, `core_master_mhz`, `core_defines`, `core_generics` (generics of `mister_zynq`). Optional: `core_vhdl_std 2008`, `core_expect_bram` |
 | `rules.py` | if needed | Vivado source rules with expected counts (`RULES`, helpers from `RULE_API` of `prepare_sources.py`) |
 | `pll.vhd` | usually | replacement of the core's Quartus PLL (same entity name and ports) |
 | `core.xdc` | with derived clocks | `create_generated_clock` per derived clock of `pll.vhd` |
@@ -58,33 +63,39 @@ how the parts work: `doc/ARCHITECTURE.md`.
 | `games.sh` | optional | builds the start medium of the core for `FLOW=mister make package` |
 | `README.md` | yes | entry point: build, test, files, decisions, gaps |
 | `patches/` | if needed | patches of the core's checkout (`NNNN-<topic>.patch`, applied in sorted order) |
-| `STATUS.md` | yes | evidence per board and stage (`make status`, checked by `make test`) |
+| `STATUS.md` | yes | evidence for each board and stage (`make status`, checked by `make test`) |
 | `hwtest.cfg` | once on the card | game, input and nominal values of `make hwtest CORE=<core>` |
 
-`make test` (step 7) checks every profile except `_template`: the files `core.tcl` names exist and
-`prepare_sources.py` with the profile's `rules.py` passes on the pinned checkout.
+`make test` (step 7) checks each profile except `_template`:
 
-## How a change to upstream code is made (in this order of preference)
+- The files that `core.tcl` names exist.
+- `prepare_sources.py` with the `rules.py` of the profile passes on the pinned checkout.
 
-1. **Nothing**: a replacement in `hdl/intel/` or the stage C chain covers it (no core change).
+## How to change upstream code (in this order of preference)
+
+1. **Nothing**: a replacement in `hdl/intel/` or the stage C chain covers it (no change in the core).
 2. **Replacement file** in the profile (`core_exclude` + `core_add`): a whole module with the same
    name and ports (PLL, lcell ring, SDRAM controller in stage D).
 3. **Rule** in `cores/<core>/rules.py`: a mechanical, countable source fix for a Quartus/Vivado
-   difference (syntax, scope, port kind). Every rule has its expected count.
-4. **Patch** in `cores/<core>/patches/NNNN-<topic>.patch` (Main_MiSTer: `patches/Main_MiSTer/`): a change of behaviour (Main_MiSTer Zynq
-   backend, MSX_MiSTer game change). New logic goes into an own VHDL file of the profile with a
-   testbench (`cores/msx/scc_rom_hide.vhd`, `tb/scc_rom_hide_tb.vhd`); the patch only wires it. Header lines before the diff: Title, Project (with the pin it applies to), Author,
-   Company, Created, Description (why). The patches of a checkout apply in order to its pin
-   (`make test` step 5); with a new pin, rebase them and update the Project line.
+   difference (syntax, scope, port kind). Each rule has its expected count.
+4. **Patch** in `cores/<core>/patches/NNNN-<topic>.patch` (Main_MiSTer: `patches/Main_MiSTer/`): a change of
+   behavior (Main_MiSTer Zynq backend, MSX_MiSTer game change).
+   - Put new logic into an own VHDL file of the profile, with a testbench (`cores/msx/scc_rom_hide.vhd`,
+     `tb/scc_rom_hide_tb.vhd`). The patch only connects it.
+   - Header lines before the diff: Title, Project (with the pin it applies to), Author, Company, Created,
+     Description (why).
+   - The patches of a checkout apply to its pin, one after the other (`make test` step 5). If you move the pin,
+     rebase the patches and update the Project line.
 
-Rules for `sys/` (the framework copy in every core) are in `prepare_sources.py` (`SYS_RULES`,
-`ZYNQ_HOIST`, `ZYNQ_LITERALS`): they hold for every core whose `sys/` matches the pinned
-Template_MiSTer closely enough; an exact-text rule that does not match stops the build.
+The rules for `sys/` (the framework copy in each core) are in `prepare_sources.py` (`SYS_RULES`,
+`ZYNQ_HOIST`, `ZYNQ_LITERALS`). They apply to each core whose `sys/` is almost the same as the pinned
+Template_MiSTer. If an exact-text rule does not match, the build stops.
 
 ## Conventions
 
-- Own HDL in VHDL, VHDL-93 compatible (`make -C tb vhdl93`); file header with Company OHRZ and
-  Author `mr_pleasant@gmx.de`; English comments.
-- Every testbench ends with `PASS` and has mutation probes (copies in a scratch directory, never in
-  the repository).
-- Evidence levels stay apart in the documentation: simulation, synthesis/timing, hardware.
+- Our own HDL is in VHDL and is VHDL-93 compatible (`make -C tb vhdl93`).
+- The file header has Company OHRZ and Author `mr_pleasant@gmx.de`.
+- Comments are in English.
+- Each testbench ends with `PASS` and has mutation probes (copies in a scratch directory, never in the
+  repository).
+- The documentation keeps the evidence levels apart: simulation, synthesis/timing, hardware.

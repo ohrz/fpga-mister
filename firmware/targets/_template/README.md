@@ -1,10 +1,12 @@
 # Board template (`_template`)
 
-Not a board: `Makefiles/common.mk` and `firmware/common/scripts/selfcheck.sh` skip every
-`firmware/targets/_*` directory. It is the starting point for a new board; what the board has to provide
-to Main_MiSTer and the cores (PS ports, clocks, address map, DDR reservation) is the board contract in
-`doc/PORTING.md` §7.1. Everything here is taken from `zybo-z7-20`; lines marked `CONTRACT` stay as they
-are, lines marked `TODO` (and every `<...>`) are board work.
+This directory is not a board. `Makefiles/common.mk` and `firmware/common/scripts/selfcheck.sh` skip each
+`firmware/targets/_*` directory. The template is the starting point for a new board. The board contract in
+`doc/PORTING.md` §7.1 tells what the board must supply to Main_MiSTer and the cores (PS ports, clocks, address
+map, DDR reservation). All files here come from `zybo-z7-20`.
+
+- Do not change the lines with the mark `CONTRACT`.
+- The lines with the mark `TODO` (and each `<...>`) are board work.
 
 | File | Becomes | Content |
 |---|---|---|
@@ -27,13 +29,17 @@ grep -rn "TODO\|<[a-z]" .        # what is left to do
 
 Then:
 
-1. `board_files/`: the vendor's board files (the generator sets `board_part_repo_paths` to it), part and
-   `board_part` in `<board>_mister.tcl`.
-2. Pins in `<board>_mister.xdc` from the board's master XDC; HDMI, codec, LEDs, buttons in the generator
-   (`TODO` blocks).
-3. `dts/<dts name>.dts`: the kernel's board DTS plus the nodes of `dts/mister.dtsi`.
-4. `files/`: FSBL, `kernel.config`, `uboot.config`, `uEnv.txt` as in `zybo-z7-20/files/`; codec setup under
-   `files/mister-rootfs/` (Zybo: `ssm2603-init.sh` + `ssm2603.service`).
-5. `make test` (step 3 dry-runs every flow action of the new board), then
-   `PLATFORM=<board> FLOW=vivado make setup` and `PLATFORM=<board> FLOW=vivado CORE=menu make create build`.
-6. A `STATUS.md` like `zybo-z7-20/STATUS.md` and a `README.md` with the board details.
+1. Put the board files of the vendor into `board_files/`. The generator sets `board_part_repo_paths` to this
+   directory. Set the part and `board_part` in `<board>_mister.tcl`.
+2. Write the pins into `<board>_mister.xdc` from the master XDC of the board. Add HDMI, codec, LEDs and buttons in
+   the generator (`TODO` blocks).
+3. Make `dts/<dts name>.dts`: the board DTS of the kernel plus the nodes of `dts/mister.dtsi`.
+4. Fill `files/` as in `zybo-z7-20/files/`:
+   - FSBL
+   - `kernel.config` (only board options: the options of MiSTer are in `firmware/common/linux/kernel.config`)
+   - `uboot.config`, `uEnv.txt`
+   - the codec setup under `files/mister-rootfs/` (Zybo: `ssm2603-init.sh` + `ssm2603.service`)
+5. Run `make test`. Its step 3 does a dry run of each flow action of the new board.
+6. Run `PLATFORM=<board> FLOW=vivado make setup`.
+7. Run `PLATFORM=<board> FLOW=vivado CORE=menu make create build`.
+8. Write a `STATUS.md` like `zybo-z7-20/STATUS.md` and a `README.md` with the board details.
