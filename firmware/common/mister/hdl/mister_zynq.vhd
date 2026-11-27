@@ -42,6 +42,7 @@
 --                     HDMI init state of the ZCU106), 0 when unconnected;
 --                     aux word 18 (0x58) is the debug word of the COREMEM
 --                     bridge (avl_axi_bridge dbg, 0 without G_COREMEM)
+--     board_ctrl      CTRL bits 7:3 of hps_bus_axi go to the board's own logic
 --     quiesce         CTRL bit 0 of hps_bus_axi holds the HP bridges (no new
 --                     command); STATUS bit 2 = all have closed every AXI
 --                     transaction: Main_MiSTer waits for it before it
@@ -348,7 +349,10 @@ entity mister_zynq is
     led           : out std_logic_vector(7 downto 0);  -- LED of the DE10-Nano (DE10 layout)
     status_err    : out std_logic;       -- sticky: a stage C error (emulator, region, cache, AXI)
     -- quasi-static word of the board (clk_100 domain or slower), aux word 17 (0x54) of hps_bus_axi
-    board_status  : in  std_logic_vector(31 downto 0) := (others => '0')
+    board_status  : in  std_logic_vector(31 downto 0) := (others => '0');
+    -- CTRL bits 7:3 of hps_bus_axi for the board's own logic (clk_100, quasi-static). Main writes
+    -- CTRL at each core load, so each bit is 0 after a load (KR260: test modes of kr260_dp_audio)
+    board_ctrl    : out std_logic_vector(7 downto 3)
   );
 end entity mister_zynq;
 
@@ -585,6 +589,8 @@ architecture rtl of mister_zynq is
   signal c_address     : std_logic_vector(28 downto 0);
   signal c_readdata, c_writedata : std_logic_vector(63 downto 0);
   signal c_byteenable  : std_logic_vector(7 downto 0);
+  -- CTRL bits 7:1 of hps_bus_axi (clk_100)
+  signal hps_ctrl      : std_logic_vector(7 downto 1);
 
   -- ascal frame buffer
   signal v_waitrequest, v_read, v_readdatavalid, v_write : std_logic;
@@ -863,6 +869,7 @@ begin
   -- HPS bus: GPO/GPI registers, sys_top's own logic behind them
   ------------------------------------------------------------------------------
   aux_words <= cm_cnt & cm_dbg & board_status & perf_snap;
+  board_ctrl <= hps_ctrl(7 downto 3);
 
   hps : entity work.hps_bus_axi
     generic map (G_CORE_TYPE => x"A4", G_RD_WAIT => G_RD_WAIT, G_RAW => true, G_ADDR_W => 7,
@@ -876,7 +883,8 @@ begin
       s_axi_arprot => s_axi_arprot, s_axi_arvalid => s_axi_arvalid, s_axi_arready => s_axi_arready,
       s_axi_rdata => s_axi_rdata, s_axi_rresp => s_axi_rresp, s_axi_rvalid => s_axi_rvalid,
       s_axi_rready => s_axi_rready,
-      reset_in => '0', reset_req => open, quiesce => quiesce, idle => hp_idle, led_disk => open,
+      reset_in => '0', reset_req => open, quiesce => quiesce, ctrl => hps_ctrl, idle => hp_idle,
+      led_disk => open,
       clk_sys => clk_sys, io_din => open, io_strobe => open, io_fpga => open, io_uio => open,
       io_osd_hdmi => open, io_osd_vga => open, io_dout => (others => '0'), io_wide => '0', io_wait => '0',
       gp_out_sys => gp_out_sys, gp_in_sys => gp_in_sys, aux => aux_words);

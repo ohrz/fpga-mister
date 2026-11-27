@@ -22,7 +22,8 @@ include firmware/common/checkouts.mk
 # board profile (platform.mk): MISTER_CORES <design>:<core>[:<folder>] (hw/bins/<design>.bit.bin of
 # FLOW=vivado make build becomes /media/fat/<folder>/<core>.rbf, folder default _Computer, the core
 # menu /media/fat/menu.rbf), MISTER_ROOTFS_FILES (optional
-# directory of the board, copied to / of the rootfs, e.g. the codec setup); arch-<arch>.mk:
+# directory of the board, copied to / of the rootfs, e.g. the codec setup), MISTER_ROOTFS_TOOLS (optional
+# files of the board directory, copied to /usr/local/bin of the rootfs); arch-<arch>.mk:
 # MISTER_CROSS_COMPILE (prefix of the armhf cross compiler, on the PATH of settings64.sh)
 MISTER_OUT		:= firmware/build/$(PLATFORM)/mister
 MISTER_SRC		:= $(MISTER_OUT)/Main_MiSTer
@@ -105,6 +106,7 @@ package:
 
 	cp $(MISTER_FILES)/rootfs/mister.service $(MISTER_FILES)/rootfs/usr-lib-firmware-mister.mount $(MISTER_STAGE)/etc/systemd/system/
 	$(if $(MISTER_ROOTFS_FILES),cp -r firmware/targets/$(PLATFORM)/$(MISTER_ROOTFS_FILES)/. $(MISTER_STAGE)/)
+	$(if $(MISTER_ROOTFS_TOOLS),install -D -m 755 -t $(MISTER_STAGE)/usr/local/bin $(addprefix firmware/targets/$(PLATFORM)/,$(MISTER_ROOTFS_TOOLS)))
 
 #	every service is enabled (all of them are WantedBy=multi-user.target)
 	mkdir -p $(MISTER_STAGE)/etc/systemd/system/multi-user.target.wants

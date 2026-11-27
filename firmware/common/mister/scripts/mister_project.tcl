@@ -46,6 +46,10 @@
 #     ... make_wrapper ...
 #     mister_runs $core design_1.bd <project dir> {clk_100 10.0 clk_50 20.0 ...}
 #     mister_extra_xdc       ;# after the board constraints: LAB_EXTRA_XDC_<board> of the lab
+#     mister_hp_map {m_axi_sdram hp0 ...} {m_axi_sdram ...}  ;# PS port of each master: LAB_HP_MAP_<board>
+#     mister_ps_port hpc0    ;# Zynq UltraScale+: PS IP names of one slave port (GP index, interface, clock, segment)
+#     mister_lab_incremental ;# at the end: incremental implementation from LAB_INC_DCP_<design> of the lab
+#     mister_lab_pre_place   ;# at the end: pre-place hook of impl_1 from LAB_PRE_PLACE_TCL_<board> of the lab
 #-----------------------------------------------------------------------------
 
 source [file join [file dirname [info script]] qip.tcl]
@@ -185,10 +189,16 @@ proc mister_runs {core bd dir clocks} {
         impl_1 {[dict get $r impl_props]}"
 }
 
-# CONFIG.<generic> list for set_property -dict on the mister_zynq cell
+# CONFIG.<generic> list for set_property -dict on the mister_zynq cell. The environment variable
+# MISTER_EXTRA_GENERICS (LAB_GENERICS_<design> of the Makefile, name value list) adds generics of
+# one lab build, for example G_RD_WAIT 2
 proc mister_bd_config {core} {
   set cfg {}
   dict for {k v} [dict get $core generics] { lappend cfg CONFIG.$k $v }
+  if {[info exists ::env(MISTER_EXTRA_GENERICS)] && $::env(MISTER_EXTRA_GENERICS) ne ""} {
+    foreach {k v} $::env(MISTER_EXTRA_GENERICS) { lappend cfg CONFIG.$k $v }
+    puts "INFO: mister_bd_config: lab generics $::env(MISTER_EXTRA_GENERICS)"
+  }
   return $cfg
 }
 
@@ -226,6 +236,60 @@ proc mister_direct_video {core} {
 # absolute XDC paths, added for the implementation only and read after the other constraints.
 # A missing file stops the script, so a design never builds without them by mistake.
 # Returns the list of the added files.
+# HP port of each memory master for one board unit (environment MISTER_HP_MAP, set by FLOW=vivado
+# make create from LAB_HP_MAP_<board> in firmware/common/lab.mk or lab.local.mk): a space-separated
+# list of <master>:<port>, for example "m_axi_sdram:3 m_axi_vbuf:2". Returns the dict <defaults>
+# with these changes. An unknown master, a port outside 0..3 or two masters of <used> (the masters
+# that the design connects) on one port stop the script.
+proc mister_hp_map {defaults used} {
+  set map $defaults
+  if {[info exists ::env(MISTER_HP_MAP)]} {
+    foreach e $::env(MISTER_HP_MAP) {
+      if {![regexp {^([a-z_]+):(hp[0-3]|hpc[01]|[0-3])$} $e -> m p] || ![dict exists $defaults $m]} {
+        error "mister_hp_map: bad entry '$e' (LAB_HP_MAP_<board> in lab.local.mk, <master>:<hp0..hp3|hpc0|hpc1>)"
+      }
+      # a number n is the old notation of HPn
+      if {[string is integer $p]} { set p hp$p }
+      dict set map $m $p
+      puts "INFO: mister_hp_map: $m -> [string toupper $p]"
+    }
+  }
+  set ports {}
+  foreach m $used { lappend ports [dict get $map $m] }
+  if {[llength [lsort -unique $ports]] != [llength $ports]} { error "mister_hp_map: two masters on one HP port: $map ($used)" }
+  return $map
+}
+
+# Zynq UltraScale+ PS slave port p (hp0..hp3, hpc0, hpc1): the names in zynq_ultra_ps_e.
+# gp: index of CONFIG.PSU__USE__S_AXI_GP<gp> and CONFIG.PSU__SAXIGP<gp>__DATA_WIDTH.
+# The HPC ports go through the CCI. Without coherent transactions they work as the HP ports.
+proc mister_ps_port {p} {
+  if {![regexp {^(hpc?)([0-3])$} $p -> kind n] || ($kind eq "hpc" && $n > 1)} { error "mister_ps_port: bad port '$p'" }
+  set P [string toupper $p]
+  set gp [expr {$kind eq "hp" ? $n + 2 : $n}]
+  return [dict create gp $gp intf S_AXI_${P}_FPD clk saxi${p}_fpd_aclk seg SAXIGP$gp/${P}_DDR_LOW]
+}
+
+# Incremental implementation of impl_1 from a routed checkpoint of the lab (MISTER_INC_DCP, LAB_INC_DCP_<design>
+# in lab.local.mk). A board unit can keep the routes of a checked build this way.
+proc mister_lab_incremental {} {
+  if {![info exists ::env(MISTER_INC_DCP)] || $::env(MISTER_INC_DCP) eq ""} { return }
+  set f $::env(MISTER_INC_DCP)
+  if {![file isfile $f]} { error "mister_lab_incremental: $f does not exist (LAB_INC_DCP_<design> in lab.local.mk)" }
+  set_property INCREMENTAL_CHECKPOINT $f [get_runs impl_1]
+  puts "INFO: mister_lab_incremental: impl_1 starts from $f"
+}
+
+# Tcl hook of the lab that runs in impl_1 after opt_design and before place_design (MISTER_PRE_PLACE_TCL,
+# LAB_PRE_PLACE_TCL_<board> in lab.local.mk). A board unit can fix the routes of a checked build this way.
+proc mister_lab_pre_place {} {
+  if {![info exists ::env(MISTER_PRE_PLACE_TCL)] || $::env(MISTER_PRE_PLACE_TCL) eq ""} { return }
+  set f $::env(MISTER_PRE_PLACE_TCL)
+  if {![file isfile $f]} { error "mister_lab_pre_place: $f does not exist (LAB_PRE_PLACE_TCL_<board> in lab.local.mk)" }
+  set_property STEPS.PLACE_DESIGN.TCL.PRE $f [get_runs impl_1]
+  puts "INFO: mister_lab_pre_place: impl_1 runs $f before place_design"
+}
+
 proc mister_extra_xdc {} {
   if {![info exists ::env(MISTER_EXTRA_XDC)]} { return {} }
   set added {}

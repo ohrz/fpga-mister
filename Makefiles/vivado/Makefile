@@ -116,8 +116,12 @@ ifneq ($(VIVADO_IP_DIRS),)
 endif
 
 #	LAB_EXTRA_XDC_<platform> (firmware/common/lab.mk, lab.local.mk): more constraints of one board unit,
-#	the generator adds them for the implementation (mister_extra_xdc in mister_project.tcl)
-	cd firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw; MISTER_EXTRA_XDC='$(foreach f,$(LAB_EXTRA_XDC_$(PLATFORM)),$(abspath $(f)))' vivado -mode batch -notrace -source ../../../../targets/$(PLATFORM)/scripts/$(VIVADO_VER)/$(CREATE_TCL) -tclargs $(CREATE_ARGS)
+#	the generator adds them for the implementation (mister_extra_xdc in mister_project.tcl).
+#	LAB_HP_MAP_<platform>: HP port of each memory master (mister_hp_map in mister_project.tcl)
+#	LAB_INC_DCP_<design>: routed checkpoint for an incremental implementation (mister_lab_incremental)
+#	LAB_PRE_PLACE_TCL_<platform>: Tcl hook of impl_1 before place_design (mister_lab_pre_place)
+#	LAB_GENERICS_<design>: more mister_zynq generics of one build, name value list (mister_bd_config)
+	cd firmware/build/$(PLATFORM)/$(VIVADO_VER)/hw; MISTER_EXTRA_XDC='$(foreach f,$(LAB_EXTRA_XDC_$(PLATFORM)),$(abspath $(f)))' MISTER_HP_MAP='$(LAB_HP_MAP_$(PLATFORM))' MISTER_INC_DCP='$(if $(LAB_INC_DCP_$(TOPLEVEL)),$(abspath $(LAB_INC_DCP_$(TOPLEVEL))))' MISTER_PRE_PLACE_TCL='$(if $(LAB_PRE_PLACE_TCL_$(PLATFORM)),$(abspath $(LAB_PRE_PLACE_TCL_$(PLATFORM))))' MISTER_EXTRA_GENERICS='$(LAB_GENERICS_$(TOPLEVEL))' vivado -mode batch -notrace -source ../../../../targets/$(PLATFORM)/scripts/$(VIVADO_VER)/$(CREATE_TCL) -tclargs $(CREATE_ARGS)
 
 #-----------------------------------------------------------------------------
 # Build Vivado project

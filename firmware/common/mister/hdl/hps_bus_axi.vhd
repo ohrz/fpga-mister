@@ -24,7 +24,8 @@
 --                      domain behind, bit 2 idle (synchronized), bit 3 quiesce
 --          CTRL    WO  bit 0 quiesce: Main_MiSTer sets it before it reconfigures
 --                      the PL and waits for idle (the design has closed every
---                      transaction on its HP ports); reset value 0
+--                      transaction on its HP ports); reset value 0;
+--                      bits 7:1 go to the port ctrl (design use, reset value 0)
 --     0x10 + 4 i  AUX  RO  word i of aux (G_AUX words, G_ADDR_W > 4): data of the
 --                      design that is quasi-static in any clock domain (it
 --                      changes so rarely that the reader can check it, e.g. the
@@ -103,6 +104,7 @@ entity hps_bus_axi is
     reset_in      : in  std_logic := '0';   -- sets the core reset request (sys_top: reset button)
     reset_req     : out std_logic;          -- core reset request
     quiesce       : out std_logic;          -- CTRL bit 0
+    ctrl          : out std_logic_vector(7 downto 1);  -- CTRL bits 7:1 (aclk)
     idle          : in  std_logic := '0';   -- asynchronous: HP ports quiesced
     led_disk      : out std_logic;          -- gp_out(29)
 
@@ -157,6 +159,7 @@ architecture rtl of hps_bus_axi is
   signal resetd2   : std_logic_vector(1 downto 0);
   signal reset_r   : std_logic;
   signal quiesce_r : std_logic;
+  signal ctrl_r    : std_logic_vector(7 downto 1);
   signal idle_s    : std_logic_vector(1 downto 0) := "00";
   signal aw_low    : std_logic;                         -- address in 0x0..0xC
   signal ar_low    : std_logic;
@@ -241,6 +244,7 @@ begin
             elsif aw_sel = "11" then
               if s_axi_wstrb(0) = '1' then
                 quiesce_r <= s_axi_wdata(0);
+                ctrl_r    <= s_axi_wdata(7 downto 1);
               end if;
             elsif aw_sel = "00" then
               if behind = '1' then
@@ -329,12 +333,14 @@ begin
         resetd2      <= "00";
         reset_r      <= '0';
         quiesce_r    <= '0';
+        ctrl_r       <= (others => '0');
       end if;
     end if;
   end process;
 
   reset_req <= reset_r;
   quiesce   <= quiesce_r;
+  ctrl      <= ctrl_r;
   led_disk  <= gpo_reg(29);
 
   ------------------------------------------------------------------------------

@@ -39,3 +39,24 @@ LAB_BOARD_HOST_zybo-z7-20 ?=
 LAB_EXTRA_XDC_kr260		?=
 LAB_EXTRA_XDC_zcu106	?=
 LAB_EXTRA_XDC_zybo-z7-20 ?=
+
+# HP port of each memory master of mister_zynq for one board unit of this lab (FLOW=vivado make create,
+# generators that call mister_hp_map): <master>:<port>, port hp0..hp3, hpc0 or hpc1, for example
+#   LAB_HP_MAP_kr260 := m_axi_sdram:hp3 m_axi_vbuf:hp2
+# Empty: m_axi_sdram HP0, m_axi_vbuf HP1, m_axi_ddram HP2, m_axi_coremem HP3.
+LAB_HP_MAP_kr260		?=
+
+# Routed checkpoint of a checked build of one design (<board>_<core>) of this board unit. FLOW=vivado make
+# create sets it as incremental checkpoint of impl_1, so the new build keeps its placement and routes.
+# Empty: a normal implementation.
+LAB_INC_DCP_kr260_menu	?=
+
+# Tcl hook of impl_1 after opt_design and before place_design for one board unit (FLOW=vivado make create sets it as
+# STEPS.PLACE_DESIGN.TCL.PRE). Empty: no hook.
+LAB_PRE_PLACE_TCL_kr260	?=
+
+# More mister_zynq generics of one design (<board>_<core>) for a lab build, as a name value list, for example
+#   LAB_GENERICS_kr260_msx := G_RD_WAIT 2
+# FLOW=vivado make create sets them on the mister_zynq cell (mister_bd_config). Empty: the generics of the core profile.
+LAB_GENERICS_kr260_msx	?=
+
