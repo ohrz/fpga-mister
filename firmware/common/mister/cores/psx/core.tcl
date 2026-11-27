@@ -50,7 +50,10 @@
 #   53.704 MHz (PLLE2, +196 ppm) and PAL 53.205 MHz (MMCM, +32 ppm) behind a
 #   BUFGCTRL, isPal of PSX.sv selects PAL (rules.py; pll_cfg.vhd only takes the writes); fast
 #   forward off (rules.py).  MMCMs on the xc7z020: frame 2 + pll + pll2 PAL = 4
-#   of 4.
+#   of 4.  On a board with few MMCMs (mister_core_add with low_mmcm 1, KR260)
+#   core_swap_low_mmcm replaces pll2.vhd by pll2_us.vhd: one MMCME4, NTSC
+#   53.683 MHz (-189 ppm) and PAL 53.208 MHz (+85 ppm), with core_us.xdc and
+#   core_ultrascale_us.xdc.
 #   Macros (PSX.qsf): MISTER_FB, MISTER_DOWNSCALE_NN, MISTER_DISABLE_ALSA;
 #   MISTER_ZYNQ_* and the ascal macros above.  VHDL-2008 (VHDL_INPUT_VERSION).
 #   Replaced: rtl/pll* (pll.v, pll2.v) by pll.vhd, pll2.vhd; sys/pll_cfg by
@@ -66,6 +69,9 @@ set core_add     {cores/psx/pll.vhd cores/psx/pll2.vhd cores/psx/pll_cfg.vhd cor
 set core_xdc     {cores/psx/core.xdc}
 # UltraScale(+) only (mister_project.tcl): clock placement rules of that family
 set core_xdc_ultrascale {cores/psx/core_ultrascale.xdc}
+# board with few MMCMs (mister_core_add with low_mmcm 1): pairs of a file and its replacement
+set core_swap_low_mmcm {cores/psx/pll2.vhd cores/psx/pll2_us.vhd cores/psx/core.xdc cores/psx/core_us.xdc
+                        cores/psx/core_ultrascale.xdc cores/psx/core_ultrascale_us.xdc}
 set core_vhdl_std 2008
 set core_master_mhz 50.0
 set core_defines {MISTER_FB=1 MISTER_DOWNSCALE_NN=1 MISTER_DISABLE_ALSA=1 MISTER_ZYNQ_COREMEM=1 MISTER_ZYNQ_NO_DOWNSCALE=1

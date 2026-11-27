@@ -24,7 +24,7 @@
 --     high time half the period, outclk_3 stays '0'
 --     pll2 (after both sources locked) with pll_cfg_small, written as N64.sv
 --     does (addresses 0, 7, 2): mean period of clk_vid over 2000 periods,
---     each period within 0.1 ns of it, in this order
+--     each period within 0.1 ns of it (0.2 ns with G_US), in this order
 --       start (no write)            NTSC 20.5405 ns (48.684211 MHz) +- 1 ps
 --       PAL divider to address 0    still NTSC (only address 7 counts)
 --       PAL divider to address 7    PAL  20.1382 ns (49.657534 MHz) +- 1 ps
@@ -34,6 +34,10 @@
 --     safe start: no rising edge of the core clocks while locked is '0';
 --     locked rises at least 200 refclk periods after the MMCM's LOCKED;
 --     the same after a pulse on rst (lock loss) at the end, then a relock
+--   G_US true: the bench of cores/n64/pll2_us.vhd (one MMCME4_BASE for NTSC
+--   and PAL, target n64_pll_us_tb of the Makefile): the same checks with
+--     NTSC 20.5413 ns (1539.583 MHz / 31.625, 48.682477 MHz), PAL 20.1353 ns
+--     (1539.583 MHz / 31, 49.663978 MHz)
 --   Ends with "PASS" or a failure.  VHDL-2008 (ghdl --std=08).
 -------------------------------------------------------------------------------
 -- Copyright (c) 2026 by OHRZ
@@ -43,6 +47,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 
 entity n64_pll_tb is
+  generic (G_US : boolean := false);    -- true: pll2_us.vhd (one MMCME4) instead of pll2.vhd
 end entity;
 
 architecture tb of n64_pll_tb is
@@ -175,28 +180,40 @@ begin
   -- clk_vid: rates in the order NTSC, NTSC (write to address 0), PAL, NTSC (MPAL)
   process
     alias locked2 is <<signal .n64_pll_tb.dut2.lock_i : std_logic>>;
-    constant P_NTSC : time := 20540.54 ps;  -- 925 MHz / 19
-    constant P_PAL  : time := 20138.16 ps;  -- 906.25 MHz / 18.25
+    function pick(us : boolean; a, b : time) return time is
+    begin
+      if us then return a; else return b; end if;
+    end function;
+    -- pll2_us.vhd: 1539.583 MHz / 31.625 and / 31, pll2.vhd: 925 MHz / 19 and 906.25 MHz / 18.25
+    constant P_NTSC : time := pick(G_US, 20541.27 ps, 20540.54 ps);
+    constant P_PAL  : time := pick(G_US, 20135.32 ps, 20138.16 ps);
     constant DSM_PAL  : std_logic_vector(31 downto 0) := x"F02C4355";   -- VCLK_DSM_PAL of N64.sv
     constant DSM_MPAL : std_logic_vector(31 downto 0) := x"C0CB062C";   -- VCLK_DSM_MPAL
 
+    -- largest deviation of one period.  The MMCME4 model of Vivado 2025.2 varies single periods of
+    -- the fractional divider / 31.625 by up to 103.4 ps (VCO period 649.5 ps), the mean stays exact
+    constant T_PER  : time := pick(G_US, 200 ps, 100 ps);
     procedure measure(p : time; what : string) is
-      variable t1, tp : time;
+      variable t1, tp, d, dmax : time;
     begin
+      dmax := 0 ps;
       wait for 2 us;                          -- the switch and the BUFGCTRL handover
       wait until rising_edge(clk_vid);
       t1 := now;
       tp := now;
       for k in 1 to 2000 loop
         wait until rising_edge(clk_vid);
-        assert abs ((now - tp) - p) <= 100 ps
+        d := abs ((now - tp) - p);
+        if d > dmax then dmax := d; end if;
+        assert d <= T_PER
           report what & ": clk_vid period " & time'image(now - tp) severity failure;
         tp := now;
       end loop;
       assert abs ((now - t1) / 2000 - p) <= 1 ps
         report what & ": clk_vid mean period " & time'image((now - t1) / 2000) & ", expected " & time'image(p)
         severity failure;
-      report what & ": clk_vid mean period " & time'image((now - t1) / 2000);
+      report what & ": clk_vid mean period " & time'image((now - t1) / 2000) & ", largest period deviation "
+        & time'image(dmax);
     end procedure;
 
     -- one region change as N64.sv writes it: address 0, 7 (divider), 2; data of 7 at address a7

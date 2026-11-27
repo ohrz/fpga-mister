@@ -35,6 +35,10 @@
 --     safe start: no rising edge of the core clocks while locked is '0';
 --     locked rises at least 200 refclk periods after the MMCM's LOCKED;
 --     the same after a pulse on rst (lock loss) at the end, then a relock
+--   G_US true: the bench of cores/psx/pll2_us.vhd (one MMCME4_BASE for NTSC
+--   and PAL, target psx_pll_us_tb of the Makefile): the same checks with
+--     NTSC 18.6279 ns (1503.125 MHz / 28, 53.683036 MHz), PAL 18.7942 ns
+--     (1503.125 MHz / 28.25, 53.207965 MHz)
 --   Ends with "PASS" or a failure.  VHDL-2008 (ghdl --std=08).
 -------------------------------------------------------------------------------
 -- Copyright (c) 2026 by OHRZ
@@ -44,6 +48,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 
 entity psx_pll_tb is
+  generic (G_US : boolean := false);    -- true: pll2_us.vhd (one MMCME4) instead of pll2.vhd
 end entity;
 
 architecture tb of psx_pll_tb is
@@ -176,29 +181,39 @@ begin
   -- clk_vid: rates in the order NTSC, NTSC (write to address 5), PAL, NTSC, PAL, NTSC (fast forward)
   process
     alias locked2 is <<signal .psx_pll_tb.dut2.lock_i : std_logic>>;
-    constant P_NTSC : time := 18620.69 ps;  -- 1450 MHz / 27
-    constant P_PAL  : time := 18795.18 ps;  -- 1037.5 MHz / 19.5
+    function pick(us : boolean; a, b : time) return time is
+    begin
+      if us then return a; else return b; end if;
+    end function;
+    -- pll2_us.vhd: 1503.125 MHz / 28 and / 28.25, pll2.vhd: 1450 MHz / 27 and 1037.5 MHz / 19.5
+    constant P_NTSC : time := pick(G_US, 18627.86 ps, 18620.69 ps);
+    constant P_PAL  : time := pick(G_US, 18794.18 ps, 18795.18 ps);
     constant K_PAL  : std_logic_vector(31 downto 0) := x"83365882";   -- 2201376898 of PSX.sv
     constant K_NTSC : std_logic_vector(31 downto 0) := x"9745BF27";   -- 2537930535
     constant K_FFW  : std_logic_vector(31 downto 0) := x"80000000";   -- 2147483648 (fast forward)
 
+    constant T_PER  : time := 100 ps;      -- largest deviation of one period
     procedure measure(p : time; what : string) is
-      variable t1, tp : time;
+      variable t1, tp, d, dmax : time;
     begin
+      dmax := 0 ps;
       wait for 2 us;                          -- the switch and the BUFGCTRL handover
       wait until rising_edge(clk_vid);
       t1 := now;
       tp := now;
       for k in 1 to 2000 loop
         wait until rising_edge(clk_vid);
-        assert abs ((now - tp) - p) <= 100 ps
+        d := abs ((now - tp) - p);
+        if d > dmax then dmax := d; end if;
+        assert d <= T_PER
           report what & ": clk_vid period " & time'image(now - tp) severity failure;
         tp := now;
       end loop;
       assert abs ((now - t1) / 2000 - p) <= 1 ps
         report what & ": clk_vid mean period " & time'image((now - t1) / 2000) & ", expected " & time'image(p)
         severity failure;
-      report what & ": clk_vid mean period " & time'image((now - t1) / 2000);
+      report what & ": clk_vid mean period " & time'image((now - t1) / 2000) & ", largest period deviation "
+        & time'image(dmax);
     end procedure;
 
     -- one region change as PSX.sv writes it: addresses 0, 5, 7 (divider K), 2; K at address a7

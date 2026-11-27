@@ -30,10 +30,10 @@ UNISIM_SRC	?= $(XILINX_VIVADO)/data/vhdl/src/unisims
 # bench: the design files it needs, in analysis order
 BENCHES				:= altsyncram_tb altdpram_tb lpm_mult_tb altddio_out_tb avl_axi_bridge_tb avl_axi_bridge_err_tb avl_axi_bridge_werr_tb sdram_emu_tb sdram_cache_tb sdram_cache_split_tb core_clock_stall_tb core_clock_stall_1to1_tb core_clock_stall_alt_tb sdram_stagec_tb hps_bus_axi_tb hps_bus_axi_raw_tb perf_counters_tb mister_zynq_tb mister_zynq_noreg_tb mister_zynq_free_tb mister_zynq_hp2err_tb mister_zynq_hp3err_tb \
 					   scc_rom_hide_tb msu_fifo_tb snes_pll_tb snes_pll_cfg_tb clk_pulse_div_tb n64_cpu_mul_tb n64_cpu_addr_fwd_tb n64_cop0_diff_tb n64_shiftreg_tb n64_pll_tb n64_sdram_tb n64_combinealpha_tb audio_i2s_simple_tb video_pll_tb \
-					   psx_sdram_tb gpu_poly_diff_tb psx_savestates_tb psx_savestates_fast_tb psx_pll_tb async_word_fifo_tb axi_reset_sync_tb
+					   psx_sdram_tb gpu_poly_diff_tb psx_savestates_tb psx_savestates_fast_tb psx_pll_tb psx_pll_us_tb n64_pll_us_tb async_word_fifo_tb axi_reset_sync_tb
 # benches with Xilinx primitives (unisim_src/primitive/*.vhd): NOT RUN (no failure) without UNISIM_SRC
 UNISIM_BENCHES		:= mister_zynq_tb mister_zynq_noreg_tb mister_zynq_free_tb mister_zynq_hp2err_tb mister_zynq_hp3err_tb snes_pll_tb clk_pulse_div_tb n64_pll_tb video_pll_tb \
-					   psx_pll_tb
+					   psx_pll_tb psx_pll_us_tb n64_pll_us_tb
 mister_zynq_tb_UNISIM	:= BUFGCE.vhd
 mister_zynq_noreg_tb_UNISIM	:= $(mister_zynq_tb_UNISIM)
 mister_zynq_free_tb_UNISIM	:= $(mister_zynq_tb_UNISIM) PLLE2_ADV.vhd PLLE2_BASE.vhd BUFG.vhd
@@ -47,6 +47,16 @@ clk_pulse_div_tb_UNISIM	:= BUFGCE.vhd
 n64_pll_tb_UNISIM	:= MMCME2_ADV.vhd MMCME2_BASE.vhd PLLE2_ADV.vhd PLLE2_BASE.vhd BUFGCTRL.vhd BUFG.vhd BUFGCE.vhd
 # extra GHDL options of a bench (the MMCM models use std_logic_signed/std_logic_arith and hide signals)
 n64_pll_tb_FLAGS	:= -fsynopsys -Wno-hide
+# the same benches with pll2_us.vhd (one MMCME4 for NTSC and PAL, core_swap_low_mmcm): bench entity
+# <x>_TOP with the generic G_US
+psx_pll_us_tb_UNISIM	:= MMCME2_ADV.vhd MMCME2_BASE.vhd MMCME4_ADV.vhd MMCME4_BASE.vhd BUFGCTRL.vhd BUFG.vhd BUFGCE.vhd
+psx_pll_us_tb_FLAGS	:= -fsynopsys -Wno-hide
+psx_pll_us_tb_TOP	:= psx_pll_tb
+psx_pll_us_tb_RUN	:= -gG_US=true
+n64_pll_us_tb_UNISIM	:= $(psx_pll_us_tb_UNISIM)
+n64_pll_us_tb_FLAGS	:= -fsynopsys -Wno-hide
+n64_pll_us_tb_TOP	:= n64_pll_tb
+n64_pll_us_tb_RUN	:= -gG_US=true
 video_pll_tb_UNISIM	:= PLLE2_ADV.vhd PLLE2_BASE.vhd BUFG.vhd
 video_pll_tb_FLAGS	:= -fsynopsys -Wno-hide
 scc_rom_hide_tb_SRC	:= ../cores/msx/scc_rom_hide.vhd scc_rom_hide_tb.vhd
@@ -116,6 +126,8 @@ psx_pll_tb_UNISIM	:= MMCME2_ADV.vhd MMCME2_BASE.vhd PLLE2_ADV.vhd PLLE2_BASE.vhd
 psx_pll_tb_FLAGS	:= -fsynopsys -Wno-hide
 psx_pll_tb_SRC		:= $(HDL)/pll_reset.vhd $(HDL)/clk_safe_start.vhd ../cores/psx/pll.vhd ../cores/psx/pll2.vhd ../cores/psx/pll_cfg.vhd psx_pll_tb.vhd
 n64_pll_tb_SRC		:= $(HDL)/pll_reset.vhd $(HDL)/clk_safe_start.vhd ../cores/n64/pll.vhd ../cores/n64/pll2.vhd ../cores/n64/pll_cfg_small.vhd n64_pll_tb.vhd
+psx_pll_us_tb_SRC	:= $(subst pll2.vhd,pll2_us.vhd,$(psx_pll_tb_SRC))
+n64_pll_us_tb_SRC	:= $(subst pll2.vhd,pll2_us.vhd,$(n64_pll_tb_SRC))
 video_pll_tb_SRC	:= $(HDL)/pll_reset.vhd $(HDL)/video_pll.vhd video_pll_tb.vhd
 altsyncram_tb_SRC		:= $(HDL)/intel/altsyncram.vhd altsyncram_tb.vhd
 altdpram_tb_SRC		:= $(HDL)/intel/altdpram.vhd altdpram_tb.vhd
@@ -182,5 +194,5 @@ $(BENCHES):
 	[ -z "$($@_NEEDS)" ] || [ -f "$($@_NEEDS)" ] || { echo "$@: NOT RUN (no $($@_NEEDS))"; exit 0; }; \
 	mkdir -p $(WORK)/$@ && $(if $($@_PRE),$($@_PRE) &&) \
 	$(GHDL) -a $(GHDL_FLAGS) $($@_FLAGS) --workdir=$(WORK)/$@ -P$(WORK)/$@ $($@_SRC) && \
-	{ $(GHDL) -r $(GHDL_FLAGS) $($@_FLAGS) --workdir=$(WORK)/$@ -P$(WORK)/$@ $@ --assert-level=error $($@_RUN) 2>&1 | tee $(WORK)/$@/run.log | grep -E "PASS|FAIL|error|failure" ; \
+	{ $(GHDL) -r $(GHDL_FLAGS) $($@_FLAGS) --workdir=$(WORK)/$@ -P$(WORK)/$@ $(or $($@_TOP),$@) --assert-level=error $($@_RUN) 2>&1 | tee $(WORK)/$@/run.log | grep -E "PASS|FAIL|error|failure" ; \
 	grep -q "PASS" $(WORK)/$@/run.log && echo "$@: PASS" || { echo "$@: FAIL (log $(WORK)/$@/run.log)"; exit 1; }; }

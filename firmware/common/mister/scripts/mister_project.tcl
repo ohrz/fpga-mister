@@ -26,8 +26,13 @@
 #        clock placement rules of that family, e.g. MMCM cascades, see mister_ultrascale)
 #     5. sets the Verilog macros of the core (core_defines, the VERILOG_MACRO lines
 #        of its .qsf) on sources_1, so the module reference elaborates with them
-#   and returns a dict: name, generics (mister_zynq generics as a name value list),
-#   master_mhz (stage C master clock), runs (the optional run settings of the profile).
+#   The optional third argument is a dict of board options. low_mmcm 1 (a board with
+#   few MMCMs, the KR260) applies core_swap_low_mmcm of the profile before step 3: pairs
+#   of a file in core_add, core_xdc, core_xdc_ultrascale or core_vhdl2008 and the file
+#   that replaces it (cores/psx: pll2_us.vhd, one MMCM for NTSC and PAL).
+#   It returns a dict: name, generics (mister_zynq generics as a name value list),
+#   master_mhz (stage C master clock), runs (the optional run settings of the profile),
+#   low_mmcm (1 if core_swap_low_mmcm replaced files, else 0).
 #   mister_runs, called after make_wrapper, applies those run settings (only when the
 #   profile has any): core_ooc_timing 1 gives the out-of-context synthesis of mister
 #   (design_1_mister_0_synth_1, without constraints otherwise) clocks on its clock
@@ -37,7 +42,7 @@
 #
 #   Usage:
 #     source <root>/firmware/common/mister/scripts/mister_project.tcl
-#     set core [mister_core_add <root> msx]
+#     set core [mister_core_add <root> msx]      ;# or: mister_core_add <root> psx {low_mmcm 1}
 #     set_property -dict [mister_bd_config $core] [get_bd_cells mister]
 #     if {[mister_ddram $core]} { ... S_AXI_HP2 for mister/m_axi_ddram ... }
 #     if {[mister_coremem $core]} { ... S_AXI_HP3 for mister/m_axi_coremem ... }
@@ -68,9 +73,13 @@ proc mister_ultrascale {} {
   return [expr {[string match *plus* $arch] || $arch in {kintexu virtexu}}]
 }
 
-proc mister_core_add {root core} {
+proc mister_core_add {root core {opts {}}} {
   set m $::mister_project::dir
+  dict for {k v} $opts {
+    if {$k ni {low_mmcm}} { error "mister_core_add: unknown option $k (low_mmcm)" }
+  }
   # optional in a profile
+  set core_swap_low_mmcm {}
   set core_defines {}
   set core_vhdl_std 93
   set core_vhdl2008 {}
@@ -79,6 +88,20 @@ proc mister_core_add {root core} {
   set core_impl_props {}
   set core_xdc_ultrascale {}
   source [file join $m cores $core core.tcl]
+  # board with few MMCMs: the replacement files of the profile (pairs: file of a list, its replacement)
+  set swapped 0
+  if {[dict exists $opts low_mmcm] && [dict get $opts low_mmcm] && [llength $core_swap_low_mmcm]} {
+    foreach {from to} $core_swap_low_mmcm {
+      set hit 0
+      foreach v {core_add core_xdc core_xdc_ultrascale core_vhdl2008} {
+        set i [lsearch -exact [set $v] $from]
+        if {$i >= 0} { set $v [lreplace [set $v] $i $i $to]; set hit 1 }
+      }
+      if {!$hit} { error "mister_core_add: core_swap_low_mmcm: $from is in no file list of $core" }
+    }
+    set swapped 1
+    puts "INFO: mister_core_add: low_mmcm, replaced {$core_swap_low_mmcm}"
+  }
   set src [file join $root _Checkouts $core_name]
   set dst [file join $root firmware build src $core_name]
   if {![file isdirectory $src]} {
@@ -141,7 +164,7 @@ proc mister_core_add {root core} {
         [llength $own] own and replacement files, defines {$core_defines}, VHDL $core_vhdl_std"
   set xdc {}
   foreach f $core_xdc { lappend xdc [file join $m $f] }
-  return [dict create name $core_name generics $core_generics master_mhz $core_master_mhz \
+  return [dict create name $core_name generics $core_generics master_mhz $core_master_mhz low_mmcm $swapped \
     runs [dict create ooc_timing $core_ooc_timing synth_options $core_synth_options \
             impl_props $core_impl_props xdc $xdc]]
 }

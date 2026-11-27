@@ -40,6 +40,9 @@
 #   (MMCM) behind a BUFGCTRL, pll_cfg_small.vhd selects PAL from the divider
 #   N64.sv writes (MPAL gets NTSC).  Both need a free-running 50 MHz
 #   CLK_50M at the emu port (G_FREE_CLK), not the gated master clock of stage C.
+#   On a board with few MMCMs (mister_core_add with low_mmcm 1, KR260)
+#   core_swap_low_mmcm replaces pll2.vhd by pll2_us.vhd: one MMCME4, NTSC
+#   48.682 MHz and PAL 49.664 MHz, with core_us.xdc and core_ultrascale_us.xdc.
 #   SDRAM (rtl/sdram.sv, Ch1 n64top cartridge saves/TPak, Ch2 ROM download):
 #   CL 2, burst 2 (32 bit per access), bank addr[24:23], row addr[22:10],
 #   column addr[9:1], chip addr[26] (two chips).
@@ -73,6 +76,9 @@ set core_vhdl2008 {cores/n64/RDP_CombineAlpha.vhd}
 set core_xdc     {cores/n64/core.xdc}
 # UltraScale(+) only (mister_project.tcl): clock placement rules of that family
 set core_xdc_ultrascale {cores/n64/core_ultrascale.xdc}
+# board with few MMCMs (mister_core_add with low_mmcm 1): pairs of a file and its replacement
+set core_swap_low_mmcm {cores/n64/pll2.vhd cores/n64/pll2_us.vhd cores/n64/core.xdc cores/n64/core_us.xdc
+                        cores/n64/core_ultrascale.xdc cores/n64/core_ultrascale_us.xdc}
 set core_vhdl_std 2008
 # 80 % and full clocks: synthesis of mister timing driven with retiming (the
 # out-of-context run has no constraints otherwise), more effort in placement and phys_opt,

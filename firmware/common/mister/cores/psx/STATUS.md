@@ -24,3 +24,8 @@ Profile: stage D (as N64), savestates/SNAC/cheats/fast forward off, EXE loading 
 | zcu106 | audio | HW | - | 2026-11-07 | sound over HDMI |
 | zcu106 | speed | HW | - | 2026-11-07 | hwtest: 49.73 Hz over 30 s (nominal 49.748 ±0.2 %), edges 100.0 % |
 | zcu106 | saves | BLOCKED | - | 2026-11-07 | hwtest stopped by the start hang (2 of 4 loads: Main stuck sending the BIOS, the core does not take the word) |
+| kr260 | timing | Timing | - | 2026-11-27 | `kr260_psx` (compact clocks, `pll2_us.vhd`): WNS +2.860 ns, WHS +0.010 ns, `check_timing` 0, 50,081 LUT (57.7 %), 84.5 BRAM tiles, 4 of 4 MMCM. Video 53.683 MHz (NTSC) and 53.208 MHz (PAL), audio 24.573 MHz |
+| kr260 | load | HW | - | 2026-11-27 | Core change from the menu through `load_core` (`/tmp/CORENAME` PSX), BIOS menu on the DisplayPort. A PAL game starts from its CUE through an MGL (CD as `S1`, index 1) |
+| kr260 | picture | HW | - | 2026-11-27 | BIOS menu and game demo in 3D with textures at 1280x720@59.99 through the DisplayPort live input, checked by eye |
+| kr260 | audio | HW | - | 2026-11-27 | The DPSUB takes 48000 frames/s (counter of `kr260_dp_audio`, `clk_audio` of the compact clocks). Game sound through the DisplayPort: RMS −12 dBFS, right channel without sample steps above 8000 |
+| kr260 | speed | HW | - | 2026-11-27 | `fps.py 40`: 49.77 Hz (PAL, target 49.748 ± 0.2 %) |

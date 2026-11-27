@@ -22,3 +22,9 @@ shows the overview of all cores. Commit `-` means the evidence comes from the pu
 | zcu106 | audio | HW | - | 2026-11-07 | sound over HDMI |
 | zcu106 | saves | FAIL | - | 2026-11-07 | hwtest: backup RAM saved with "Save Backup RAM" in the OSD and read back after loading the core again (Main served 32768 of 32768 bytes); savestates FAIL: "Save state"/"Load state" disabled in the OSD, no .ss (stage C without `DDRAM_*`) |
 | zcu106 | speed | FAIL | - | 2026-11-07 | hwtest: 49.97 Hz over 30 s (nominal 50.007 ±0.2 %) but edges 94.476 % (pacer 94.583 %): stall 2.26 %, bucket full 0.16 %, 35.8 cycles per miss; Zybo 94.583 % |
+| kr260 | timing | Timing | - | 2026-11-27 | `kr260_snes`: WNS +1.510 ns, WHS +0.010 ns, `check_timing` 0, 44,634 LUT (51.4 %), 105 BRAM tiles, 3 MMCM. `core_buf` in X1Y2 (`kr260_core_buf.xdc`) |
+| kr260 | load | HW | - | 2026-11-27 | The PAL game starts through an MGL |
+| kr260 | picture | HW | - | 2026-11-27 | Language selection and title screen of the PAL game on the DisplayPort, checked by eye |
+| kr260 | input | HW | - | 2026-11-27 | `vpad.py START`: the game goes from the language selection to the title screen |
+| kr260 | audio | HW | - | 2026-11-27 | Game sound through the DisplayPort: RMS 1099 and 816 (left, right), 0.01 % sample steps above 8000 |
+| kr260 | speed | HW | - | 2026-11-27 | `fps.py 30`: 50.07 Hz (target 50.007 ± 0.2 %). `perf.py 3`: core edges 94.580 % (pacer 94.583 %), stall 0.74 %, master clock 85 MHz |

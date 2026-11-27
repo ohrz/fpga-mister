@@ -5,14 +5,15 @@ The console is on PS UART1 (`ttyPS1`). The board has **no HDMI output**. Its onl
 of the PS (DPSUB, one lane on PS-GTR lane 1, AUX on MIO 27 to 30). The board has no audio codec and no PL buttons
 or PL LEDs.
 
-**State (2026-11-27):** the cores menu and MSX run with picture and sound through the DisplayPort. SNES, PSX and N64
-are not built. The open items are at the end of this file.
+**State (2026-11-27):** the cores menu, MSX, SNES, PSX and N64 run with picture and sound through the DisplayPort. The open items are at the end of this file.
 
 | Path | Content |
 |---|---|
 | `platform.mk` | Board profile: flows `vivado kernel boot mister`, network boot, NFS root, `MISTER_CORES` |
 | `board_files/` | AMD board files of the K26 SOM (`kr260_som`) and of the carrier (`kr260_carrier`) |
 | `constraints/kr260_mister.xdc` | Pins (25 MHz oscillator, fan enable), clock groups |
+| `constraints/kr260_mmcm_frame.xdc`, `kr260_mmcm_compact.xdc` | MMCM sites of the two clock variants |
+| `constraints/kr260_core_buf.xdc` | Clock region of the gated core clocks (SNES) |
 | `scripts/2025.2/kr260_mister.tcl` | Block design and generator of each MiSTer design (`CORE=<core>`). `kr260_menu` builds with timing PASS (2026-11-26) |
 | `hdl/kr260_dp_live.vhd` | Video of `mister_zynq` into the live video input of the DisplayPort |
 | `hdl/kr260_dp_audio.vhd` | I2S of `mister_zynq` into the live audio input of the DisplayPort, test tone, counters |
@@ -30,7 +31,7 @@ The designs are `kr260_<core>` for each core profile (menu, msx, snes, psx, n64)
 | Item | KR260 |
 |---|---|
 | PS | `zynq_ultra_ps_e` with the board preset. The register window HPM0_FPD is at 0xA000_0000, as on the ZCU106. HP0 to HP3 are 128 bit wide. SmartConnects convert the 64-bit AXI3 masters of `mister_zynq` |
-| Clocks | The 25 MHz carrier oscillator (SOM pin C3). MMCM `clk_base` makes 100 MHz and 25 MHz. `clk_core` makes the clocks of the Zybo from 100 MHz. MMCM `clk_pix` makes 74.25 MHz exactly (M 37.125, D 1, O 12.5). The XCK26 has only four MMCMs in one column. `clk_core` is next to `clk_base`, `clk_pix` gets its 25 MHz through the clock backbone (`kr260_mister.xdc`) |
+| Clocks | The 25 MHz carrier oscillator (SOM pin C3). The XCK26 has only four MMCMs in one column. Frame variant (menu, MSX, SNES): MMCM `clk_base` makes 100 MHz and 25 MHz. `clk_core` makes the clocks of the Zybo from 100 MHz. MMCM `clk_pix` makes 74.25 MHz exactly. `clk_core` is next to `clk_base`, `clk_pix` gets its 25 MHz through the clock backbone (`kr260_mmcm_frame.xdc`). Compact variant (PSX, N64, the cores with two MMCMs of their own): no `clk_base`. `clk_pix` and `clk_core` take the pin directly. `clk_core` makes 100 MHz, 50 MHz and 24.573 MHz audio (VCO 900 MHz). The core MMCMs are the two lower sites (`kr260_mmcm_compact.xdc`), and `pll2_us.vhd` of the core makes NTSC and PAL with one MMCM |
 | Video | `ascal` gives a fixed 1280x720@60. `kr260_dp_live` puts `vid_*` into `dp_live_video_in_*` of the PS. The pixel clock goes to `dp_video_in_clk`. `kr260-dp-live.service` switches to the live input after the start of Main if the DP mode of Linux is 1280x720 |
 | Sound | `kr260_dp_audio` puts the I2S of `mister_zynq` into `dp_s_axis_audio_*` of the PS (live audio input of the DisplayPort, 48 kHz, 2 channels). `kr260_dp_live.py on` sets the audio registers |
 | Buttons, LEDs | None on the PL. Open the OSD with the keyboard (F12). The DE10-Nano LEDs and the stage C error go to `board_status` (aux word 17, `devmem2 0xA0000054 w`): bits 7:0 LED (bit 6 is always 0), bit 8 stage C error |
@@ -106,8 +107,8 @@ The SD card of the carrier is a USB device (`/dev/sda`), not an SD controller of
 
 | Item | State |
 |---|---|
-| Generator Tcl | Done for menu and MSX. SNES: the clock region of the gated core clocks (as `zcu106_core_buf.xdc`), not built |
-| Clocks of PSX and N64 | The frame uses 3 MMCMs (`clk_base`, `clk_core`, `clk_pix`). PSX and N64 add 3 (`pll`, `pll2` with two sources), the XCK26 has 4. Plan: `clk_core` and `clk_pix` take the 25 MHz pin directly (no `clk_base`), and one MMCM makes NTSC and PAL. Not built |
+| Generator Tcl | Done for all five cores. SNES (`kr260_core_buf.xdc`): WNS +1.510 ns. PSX and N64 (compact clocks): WNS +2.860 ns and +1.783 ns. The five cores run on the board |
+| Clocks of PSX and N64 | Compact variant with 4 MMCMs. `pll2_us.vhd` passes its GHDL bench. `kr260_mister.tcl` processes `kr260_mmcm_compact.xdc` early, because the core XDC names the clocks of the core MMCMs. PSX and N64 give 48000 frames/s on the board |
 | Device tree | Done: carrier overlay with the reserved memory |
 | Live video | Done: `kr260_dp_live.py`, `kr260-dp-live.service`. The boot menu entry needs `video=DP-1:1280x720@60e` |
 | Sound | Done: DP live audio. Open: a test on a TV (with the codes 1/2/3 the left channel can be one sample late) |

@@ -55,7 +55,7 @@ How to port a further core: `doc/PORTING.md`. How the parts work: `doc/ARCHITECT
 
 | File | Required | Content |
 |---|---|---|
-| `core.tcl` | yes | `core_name` (checkout), `core_exclude`, `core_add`, `core_xdc`, `core_master_mhz`, `core_defines`, `core_generics` (generics of `mister_zynq`). Optional: `core_vhdl_std 2008`, `core_expect_bram` |
+| `core.tcl` | yes | `core_name` (checkout), `core_exclude`, `core_add`, `core_xdc`, `core_master_mhz`, `core_defines`, `core_generics` (generics of `mister_zynq`). Optional: `core_vhdl_std 2008`, `core_expect_bram`, `core_xdc_ultrascale` (only on an UltraScale(+) part), `core_swap_low_mmcm` (pairs of a file and its replacement for a board with few MMCMs, `mister_core_add … {low_mmcm 1}`) |
 | `rules.py` | if needed | Vivado source rules with expected counts (`RULES`, helpers from `RULE_API` of `prepare_sources.py`) |
 | `pll.vhd` | usually | replacement of the core's Quartus PLL (same entity name and ports) |
 | `core.xdc` | with derived clocks | `create_generated_clock` per derived clock of `pll.vhd` |

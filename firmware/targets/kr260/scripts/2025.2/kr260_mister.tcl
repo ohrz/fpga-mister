@@ -16,8 +16,6 @@
 #   part. The core comes as Tcl argument (FLOW=vivado passes it for CORE=<core>
 #   or TOPLEVEL=kr260_<core>) or as the variable core_id of a sourcing script.
 #
-#   DRAFT (2026-11-26): this script did not run in Vivado yet.
-#
 #     M_AXI_HPM0_FPD (128) -> SmartConnect -> mister/s_axi   hps_bus_axi at 0xA000_0000
 #     mister/m_axi_sdram   (AXI3 64, master clock) -> SmartConnect -> S_AXI_HP0_FPD (128)
 #     mister/m_axi_vbuf    (AXI3 64, 100 MHz)      -> SmartConnect -> S_AXI_HP1_FPD (128)
@@ -43,7 +41,8 @@
 #   AFI registers). Check the AFI registers under the Kria boot firmware on the
 #   board before the first load.
 #
-#   Clocks: clk_25 (carrier oscillator) -> clk_base: 100 MHz (clk_100: AXI-Lite,
+#   Clocks, frame variant (a core without MMCMs of its own: menu, MSX, SNES):
+#   clk_25 (carrier oscillator) -> clk_base: 100 MHz (clk_100: AXI-Lite,
 #   HP1, sysmem clock of sys_top) and 25 MHz (input of clk_pix); clk_core (MMCM
 #   from 100 MHz as on the Zybo and the ZCU106, same dividers): 24.576 MHz
 #   audio, master clock of the profile, 50 MHz, master without BUFG; clk_pix
@@ -57,6 +56,18 @@
 #   input: the pixel clock is asynchronous to the other clocks. The 50 MHz of
 #   clk_core is no source for clk_pix: its VCO follows the master clock of the
 #   profile (50.405 MHz for menu).
+#
+#   Clocks, compact variant (a profile with core_swap_low_mmcm: PSX, N64). The
+#   core has two MMCMs (pll, pll2_us), so the frame gets only two: no clk_base.
+#   clk_25 goes directly to clk_pix (MMCM_X0Y3, No_buffer) and through the BUFG
+#   of clk_core (Global_buffer) to clk_core (MMCM_X0Y2). clk_core: D 1, M 36,
+#   VCO 900 MHz, CLKOUT0 / 36.625 = 24.573 MHz audio (-107 ppm), / 18 = 50 MHz
+#   master clock and clk_50, / 9 = 100 MHz clk_100. The master clock must be
+#   50 MHz and free running (G_FREE_CLK 1). clk_master_gate is clk_master. The
+#   core MMCMs are MMCM_X0Y1 and MMCM_X0Y0 (kr260_mmcm_compact.xdc).
+#   Both variants: the oscillator runs before the configuration, so the MMCMs
+#   from the pin have no reset. clk_base (frame) and clk_core (compact) have
+#   the safe clock startup (BUFGCE outputs enabled after lock).
 #
 #   Address map (M_AXI_HPM0_FPD): 0xA000_0000 hps_bus_axi (4 KB); the HP ports
 #   see DDR_LOW (0x0000_0000-0x7FFF_FFFF) with the physical addresses of the
@@ -82,15 +93,33 @@ set_property target_language VHDL [current_project]
 
 # core sources and constraints, then the board constraints (after the core's generated clocks)
 source [file join $root_dir firmware common mister scripts mister_project.tcl]
-set core [mister_core_add $root_dir $core_id]
+# the XCK26 has 4 MMCMs: a profile with MMCMs of its own replaces files (core_swap_low_mmcm)
+set core [mister_core_add $root_dir $core_id {low_mmcm 1}]
 if {[mister_direct_video $core]} {
   error "kr260_mister.tcl: profile $core_id uses direct video (G_DIRECT_VIDEO); the KR260 output is fixed 720p (ascal)"
 }
+# clock variant: compact (no clk_base) if the profile replaced files for few MMCMs, else frame
+set compact [dict get $core low_mmcm]
+set master_mhz [format %.3f [dict get $core master_mhz]]
+if {$compact && (![mister_free_clk $core] || $master_mhz != 50.0)} {
+  error "kr260_mister.tcl: the compact clocks need G_FREE_CLK 1 and a 50 MHz master clock ($core_id: $master_mhz MHz)"
+}
 add_files -fileset constrs_1 -norecurse [file join $target_dir constraints kr260_mister.xdc]
+add_files -fileset constrs_1 -norecurse [file join $target_dir constraints \
+  [expr {$compact ? "kr260_mmcm_compact.xdc" : "kr260_mmcm_frame.xdc"}]]
+# compact: the create_clock of clk_25 must come before the core XDC, which names the clocks of the core MMCMs
+# (Constraints 18-851 and no clocks at all without it). In the frame variant the XDC of clk_base has it.
+if {$compact} {
+  set_property PROCESSING_ORDER EARLY [get_files kr260_mmcm_compact.xdc]
+}
+# cores with BUFGCEs behind the gated master clock: clock region of core_buf (kr260_core_buf.xdc).
+# Menu and MSX meet the timing without it and keep their checked placement.
+set core_buf_cores {snes}
+if {$core_id in $core_buf_cores} {
+  add_files -fileset constrs_1 -norecurse [file join $target_dir constraints kr260_core_buf.xdc]
+}
 # more constraints of this board unit, if the lab names them (LAB_EXTRA_XDC_<board>, lab.mk)
 mister_extra_xdc
-# TODO(kr260): a clock region constraint of the gated core clocks as zcu106_core_buf.xdc, if a large
-# core fails the timing (clk_core is MMCM_X0Y2, clock region X1Y2; menu meets the timing without it)
 add_files -norecurse [glob [file join $target_dir hdl *.vhd]]
 # I2S receiver of hdmi-tx (firmware/common/ip/hdmi-tx) for kr260_dp_audio
 set i2s_rx [file join $root_dir firmware common ip hdmi-tx src i2s_rx.vhd]
@@ -125,40 +154,71 @@ set_property -dict [concat [list CONFIG.PSU__USE__M_AXI_GP0 {1} CONFIG.PSU__MAXI
   CONFIG.PSU__TTC0__PERIPHERAL__ENABLE {1} CONFIG.PSU__TTC0__WAVEOUT__ENABLE {1} CONFIG.PSU__TTC0__WAVEOUT__IO {EMIO} \
   CONFIG.PSU__FPGA_PL1_ENABLE {0} CONFIG.PSU__FPGA_PL2_ENABLE {0} CONFIG.PSU__FPGA_PL3_ENABLE {0}]] $ps
 
-#---- clocks: carrier oscillator 25 MHz -> 100 / 25 MHz -> clk_core as on the Zybo; clk_pix 74.25 MHz
-#     clk_base with safe clock startup (BUFGCE outputs enabled after lock), as on the ZCU106
+#---- clocks (header: frame variant and compact variant)
 create_bd_port -dir I -type clk -freq_hz 25000000 clk_25
-set cb [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_base]
-set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {25.000} \
-  CONFIG.PRIM_SOURCE {Single_ended_clock_capable_pin} CONFIG.NUM_OUT_CLKS {2} \
-  CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {100.000} CONFIG.CLKOUT2_USED {true} CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {25.000} \
-  CONFIG.USE_RESET {false} CONFIG.USE_LOCKED {true} CONFIG.USE_SAFE_CLOCK_STARTUP {true}] $cb
-connect_bd_net [get_bd_ports clk_25] [get_bd_pins clk_base/clk_in1]
-set clk0   [get_bd_pins clk_base/clk_out1]
-set clk_25 [get_bd_pins clk_base/clk_out2]
+if {!$compact} {
+  # frame: carrier oscillator 25 MHz -> 100 / 25 MHz -> clk_core as on the Zybo; clk_pix 74.25 MHz
+  #     clk_base with safe clock startup (BUFGCE outputs enabled after lock), as on the ZCU106
+  set cb [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_base]
+  set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {25.000} \
+    CONFIG.PRIM_SOURCE {Single_ended_clock_capable_pin} CONFIG.NUM_OUT_CLKS {2} \
+    CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {100.000} CONFIG.CLKOUT2_USED {true} CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {25.000} \
+    CONFIG.USE_RESET {false} CONFIG.USE_LOCKED {true} CONFIG.USE_SAFE_CLOCK_STARTUP {true}] $cb
+  connect_bd_net [get_bd_ports clk_25] [get_bd_pins clk_base/clk_in1]
+  set clk0   [get_bd_pins clk_base/clk_out1]
+  set clk_25 [get_bd_pins clk_base/clk_out2]
 
-set master_mhz [format %.3f [dict get $core master_mhz]]
-set cc [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_core]
-set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {100.000} CONFIG.PRIM_SOURCE {No_buffer} \
-  CONFIG.NUM_OUT_CLKS {4} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {24.576} \
-  CONFIG.CLKOUT2_USED {true} CONFIG.CLKOUT2_REQUESTED_OUT_FREQ $master_mhz \
-  CONFIG.CLKOUT3_USED {true} CONFIG.CLKOUT3_REQUESTED_OUT_FREQ {50.000} \
-  CONFIG.CLKOUT4_USED {true} CONFIG.CLKOUT4_REQUESTED_OUT_FREQ $master_mhz CONFIG.CLKOUT4_DRIVES {No_buffer} \
-  CONFIG.USE_RESET {true} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.USE_LOCKED {true}] $cc
-connect_bd_net $clk0 [get_bd_pins clk_core/clk_in1]
-connect_bd_net [get_bd_pins clk_base/locked] [get_bd_pins clk_core/resetn]
-set clk_audio  [get_bd_pins clk_core/clk_out1]
-set clk_master [get_bd_pins clk_core/clk_out2]
-set clk_50     [get_bd_pins clk_core/clk_out3]
-set clk_master_gate [get_bd_pins clk_core/clk_out4]
+  set cc [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_core]
+  set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {100.000} CONFIG.PRIM_SOURCE {No_buffer} \
+    CONFIG.NUM_OUT_CLKS {4} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {24.576} \
+    CONFIG.CLKOUT2_USED {true} CONFIG.CLKOUT2_REQUESTED_OUT_FREQ $master_mhz \
+    CONFIG.CLKOUT3_USED {true} CONFIG.CLKOUT3_REQUESTED_OUT_FREQ {50.000} \
+    CONFIG.CLKOUT4_USED {true} CONFIG.CLKOUT4_REQUESTED_OUT_FREQ $master_mhz CONFIG.CLKOUT4_DRIVES {No_buffer} \
+    CONFIG.USE_RESET {true} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.USE_LOCKED {true}] $cc
+  connect_bd_net $clk0 [get_bd_pins clk_core/clk_in1]
+  connect_bd_net [get_bd_pins clk_base/locked] [get_bd_pins clk_core/resetn]
+  set clk_audio  [get_bd_pins clk_core/clk_out1]
+  set clk_master [get_bd_pins clk_core/clk_out2]
+  set clk_50     [get_bd_pins clk_core/clk_out3]
+  set clk_master_gate [get_bd_pins clk_core/clk_out4]
 
-# pixel clock: exact 74.25 MHz from 25 MHz (VCO 928.125 MHz); the wizard must find M 37.125, D 1, O 12.5
-set cp [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_pix]
-set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {25.000} CONFIG.PRIM_SOURCE {No_buffer} \
-  CONFIG.NUM_OUT_CLKS {1} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {74.250} \
-  CONFIG.USE_RESET {true} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.USE_LOCKED {true}] $cp
-connect_bd_net $clk_25 [get_bd_pins clk_pix/clk_in1]
-connect_bd_net [get_bd_pins clk_base/locked] [get_bd_pins clk_pix/resetn]
+  # pixel clock: exact 74.25 MHz from 25 MHz (VCO 928.125 MHz); the wizard must find M 37.125, D 1, O 12.5
+  set cp [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_pix]
+  set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {25.000} CONFIG.PRIM_SOURCE {No_buffer} \
+    CONFIG.NUM_OUT_CLKS {1} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {74.250} \
+    CONFIG.USE_RESET {true} CONFIG.RESET_TYPE {ACTIVE_LOW} CONFIG.USE_LOCKED {true}] $cp
+  connect_bd_net $clk_25 [get_bd_pins clk_pix/clk_in1]
+  connect_bd_net [get_bd_pins clk_base/locked] [get_bd_pins clk_pix/resetn]
+  set audio_ns 40.690
+  set wiz_report {clk_base 2 25.0 clk_core 4 100.0 clk_pix 1 25.0}
+} else {
+  # compact: clk_pix from the pin (IBUF of synthesis, dedicated route to MMCM_X0Y3)
+  set cp [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_pix]
+  set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {25.000} CONFIG.PRIM_SOURCE {No_buffer} \
+    CONFIG.NUM_OUT_CLKS {1} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {74.250} \
+    CONFIG.USE_RESET {false} CONFIG.USE_LOCKED {true}] $cp
+  connect_bd_net [get_bd_ports clk_25] [get_bd_pins clk_pix/clk_in1]
+  # clk_core from the pin through its BUFG; M, D and O fixed (only CLKOUT0 divides fractionally)
+  set cc [create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_core]
+  set_property -dict [list CONFIG.PRIMITIVE {MMCM} CONFIG.PRIM_IN_FREQ {25.000} CONFIG.PRIM_SOURCE {Global_buffer} \
+    CONFIG.NUM_OUT_CLKS {4} CONFIG.CLKOUT1_REQUESTED_OUT_FREQ {24.576} \
+    CONFIG.CLKOUT2_USED {true} CONFIG.CLKOUT2_REQUESTED_OUT_FREQ {50.000} \
+    CONFIG.CLKOUT3_USED {true} CONFIG.CLKOUT3_REQUESTED_OUT_FREQ {50.000} \
+    CONFIG.CLKOUT4_USED {true} CONFIG.CLKOUT4_REQUESTED_OUT_FREQ {100.000} \
+    CONFIG.USE_RESET {false} CONFIG.USE_LOCKED {true} CONFIG.USE_SAFE_CLOCK_STARTUP {true}] $cc
+  set_property -dict [list CONFIG.OVERRIDE_MMCM {true} CONFIG.MMCM_DIVCLK_DIVIDE {1} CONFIG.MMCM_CLKFBOUT_MULT_F {36.000} \
+    CONFIG.MMCM_CLKOUT0_DIVIDE_F {36.625} CONFIG.MMCM_CLKOUT1_DIVIDE {18} CONFIG.MMCM_CLKOUT2_DIVIDE {18} \
+    CONFIG.MMCM_CLKOUT3_DIVIDE {9}] $cc
+  connect_bd_net [get_bd_ports clk_25] [get_bd_pins clk_core/clk_in1]
+  set clk_audio  [get_bd_pins clk_core/clk_out1]
+  set clk_master [get_bd_pins clk_core/clk_out2]
+  set clk_50     [get_bd_pins clk_core/clk_out3]
+  set clk0       [get_bd_pins clk_core/clk_out4]
+  # G_FREE_CLK 1: mister_zynq does not use clk_master_gate
+  set clk_master_gate $clk_master
+  set audio_ns [format %.3f [expr {1000.0 * 36.625 / 900.0}]]
+  set wiz_report {clk_core 4 25.0 clk_pix 1 25.0}
+}
 set clk_hdmi [get_bd_pins clk_pix/clk_out1]
 
 # one reset for the PL (100 MHz domain) after configuration and lock; no PS reset
@@ -289,10 +349,10 @@ update_compile_order -fileset sources_1
 # run settings of the core profile (out-of-context synthesis with clocks, options, impl_1)
 mister_runs $core design_1.bd [file normalize ./$proj_name] [list clk_100 10.000 clk_50 20.000 \
   clk_master [format %.3f [expr {1000.0 / $master_mhz}]] clk_master_gate [format %.3f [expr {1000.0 / $master_mhz}]] \
-  clk_hdmi 13.468 clk_audio 40.690]
+  clk_hdmi 13.468 clk_audio $audio_ns]
 
 # report the clocks the wizards made (input * M / D / O; the core clocks depend on them)
-foreach {w n fin} {clk_base 2 25.0 clk_core 4 100.0 clk_pix 1 25.0} {
+foreach {w n fin} $wiz_report {
   set c [get_bd_cells $w]
   set vco [expr {$fin * [get_property CONFIG.MMCM_CLKFBOUT_MULT_F $c] / [get_property CONFIG.MMCM_DIVCLK_DIVIDE $c]}]
   for {set i 0} {$i < $n} {incr i} {
@@ -301,10 +361,22 @@ foreach {w n fin} {clk_base 2 25.0 clk_core 4 100.0 clk_pix 1 25.0} {
       [get_property CONFIG.CLKOUT[expr {$i + 1}]_REQUESTED_OUT_FREQ $c]]
   }
 }
-# clk_out4 (BUFGCE input core_buf) must have the edges of clk_out2 (logic driving its CE)
-foreach p {DIVIDE PHASE DUTY_CYCLE} {
-  if {[get_property CONFIG.MMCM_CLKOUT1_$p $cc] != [get_property CONFIG.MMCM_CLKOUT3_$p $cc]} {
-    error "clk_core: clk_out4 differs from clk_out2 in $p"
+if {!$compact} {
+  # clk_out4 (BUFGCE input core_buf) must have the edges of clk_out2 (logic driving its CE)
+  foreach p {DIVIDE PHASE DUTY_CYCLE} {
+    if {[get_property CONFIG.MMCM_CLKOUT1_$p $cc] != [get_property CONFIG.MMCM_CLKOUT3_$p $cc]} {
+      error "clk_core: clk_out4 differs from clk_out2 in $p"
+    }
+  }
+} else {
+  # compact: the values of the header (the wizard must keep M, D and O of OVERRIDE_MMCM)
+  set vco [expr {25.0 * [get_property CONFIG.MMCM_CLKFBOUT_MULT_F $cc] / [get_property CONFIG.MMCM_DIVCLK_DIVIDE $cc]}]
+  foreach {i want tol} {0 24.576 0.000110 1 50.0 0.0 2 50.0 0.0 3 100.0 0.0} {
+    set o [get_property CONFIG.MMCM_CLKOUT${i}_DIVIDE[expr {$i == 0 ? "_F" : ""}] $cc]
+    set f [expr {$vco / $o}]
+    if {abs($f / $want - 1.0) > $tol + 1e-9} {
+      error "clk_core: clk_out[expr {$i + 1}] [format %.5f $f] MHz instead of $want MHz"
+    }
   }
 }
 # the DisplayPort mode of Linux is 74.25 MHz: a different pixel clock gives a different refresh rate

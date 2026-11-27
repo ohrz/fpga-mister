@@ -23,3 +23,9 @@ Profile: 2/3 of the original clocks, options as constants; first check without a
 | zcu106 | audio | HW | - | 2026-11-07 | sound over HDMI |
 | zcu106 | speed | HW | - | 2026-11-07 | hwtest: 49.97 Hz over 30 s (nominal 50.0 ±0.2 %), edges 100.0 %; start hang in 1 of 3 loads (black, 0 Hz) |
 | zcu106 | saves | FAIL | - | 2026-11-07 | hwtest: no .ss (savestates off in the profile); EEPROM not written because the game does not save in the hwtest scene (no `backup_pad` yet) |
+| kr260 | timing | Timing | - | 2026-11-27 | `kr260_n64` (compact clocks, `pll2_us.vhd`): WNS +1.783 ns, WHS +0.010 ns, `check_timing` 0, 54,728 LUT (63.1 %), 60.5 BRAM tiles, 141 DSP, 4 of 4 MMCM. Core clocks 62.5, 93.75 and 125 MHz (full speed), video 48.682 MHz (NTSC) |
+| kr260 | load | HW | - | 2026-11-27 | The game starts through an MGL with `load_core` (`/tmp/CORENAME` N64) |
+| kr260 | picture | HW | - | 2026-11-27 | Title screen of the PAL game in 3D at 1280x720@59.99 through the DisplayPort live input and a DP to HDMI adapter, checked by eye |
+| kr260 | input | HW | - | 2026-11-27 | `vpad.py START` (virtual gamepad): the game goes from the title into its next screen |
+| kr260 | audio | HW | - | 2026-11-27 | The DPSUB takes 48000 frames/s (counter of `kr260_dp_audio`). Game sound through the DisplayPort: RMS 1882 and 1905 (left, right), no sample steps above 8000 |
+| kr260 | speed | HW | - | 2026-11-27 | `fps.py 30`: 49.97 Hz (target 50.0 ± 0.2 %). `n64speed.py 20` on the title screen: 90.3 % (2.22 VI for each game frame), core clocks 62.5, 93.75 and 125 MHz |
