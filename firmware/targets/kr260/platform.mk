@@ -23,11 +23,12 @@ PLATFORM_ARCH			:= zynqmp
 VIVADO_SETUP_CHECKOUTS	:= Template_MiSTer MSX_MiSTer Menu_MiSTer SNES_MiSTer PSX_MiSTer N64_MiSTer
 
 # kernel (FLOW=kernel): linux-xlnx with the K26 SOM and KR260 carrier DTB of the kernel tree.
-# TODO(kr260): a board DTS with the MiSTer nodes (reserved PL DDR 0x1FF0_0000, cma) as
-# zcu106/dts, and the dpsub node of the live video input (port@0, clock dp_live_video_in_clk)
+# dts/zynqmp-sck-kr-g-revB.dtso replaces the carrier overlay of the tree: it adds the reserved
+# PL DDR 0x1FF0_0000 of the MiSTer part (the kernel build merges it into KERNEL_DTB).
+# TODO(kr260): the dpsub node of the live video input (port@0, clock dp_live_video_in_clk)
 KERNEL_XILINX_DEVICE_TREE := zynqmp-sc-revB
 KERNEL_DTB				:= zynqmp-smk-k26-revA-sck-kr-g-revB.dtb
-KERNEL_DTS_FILES		:=
+KERNEL_DTS_FILES		:= dts/zynqmp-sck-kr-g-revB.dtso
 KERNEL_PATCHES			:=
 
 # boot (FLOW=boot): network boot only; the boot firmware and U-Boot stay those of the QSPI flash,
@@ -58,4 +59,7 @@ NFS_ROOT_SETUP			= firmware/common/mister/scripts/nfs-rootfs.sh --modules firmwa
 # CONFIG_COMPAT, patch 0002 finds the register base); cores as <design>:<core>[:<folder>]
 MISTER_CORES			:= kr260_menu:menu kr260_msx:MSX kr260_snes:SNES:_Console	\
 						   kr260_psx:PSX:_Console kr260_n64:N64:_Console
-MISTER_ROOTFS_FILES		:=
+# board files of the rootfs: fixed slow fan speed (kr260-fan.service), DP live inputs after Main
+# (kr260-dp-live.service with /usr/local/bin/kr260_dp_live.py)
+MISTER_ROOTFS_FILES		:= files/mister-rootfs
+MISTER_ROOTFS_TOOLS		:= sw/kr260_dp_live.py

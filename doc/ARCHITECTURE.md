@@ -2,8 +2,8 @@
 
 Status: 2026-11-26.
 
-- Boards: Zybo Z7-20 (Zynq-7020) and ZCU106 (Zynq UltraScale+ ZU7EV) run on the hardware. The KR260 (Kria K26) is a
-  draft that did not run. The differences of the boards are in the board contract (`doc/PORTING.md` §7.1) and in
+- Boards: Zybo Z7-20 (Zynq-7020) and ZCU106 (Zynq UltraScale+ ZU7EV) run on the hardware. The KR260 (Kria K26) runs
+  menu and MSX. The differences of the boards are in the board contract (`doc/PORTING.md` §7.1) and in
   `firmware/targets/<board>/README.md`. This document describes the Zybo, if it does not name a different board.
 - Cores: menu, MSX2/2+, SNES, PSX and N64. All of them are the unmodified MiSTer cores of their authors (credits:
   `README.md`).
@@ -422,7 +422,7 @@ I2S of `sys_top`. Only the output stage after it is board-specific:
 | Board | Output stage | Sound |
 |---|---|---|
 | ZCU106 | `zcu106_hdmi`: the symbol generator `hdmi_tx` (`hdmi-tx`, as in §4.1), three GTH lanes and the DP159 retimer. The pixel clock comes from the Si5324 | In the HDMI data islands |
-| KR260 (draft) | `kr260_dp_live`: `vid_*` into the live video input of the PS DisplayPort (`dp_live_video_in_*`). The PL gives the pixel clock and the timing. Linux trains the link | Open |
+| KR260 (menu and MSX checked) | `kr260_dp_live`: `vid_*` into the live video input of the PS DisplayPort (`dp_live_video_in_*`). The PL gives the pixel clock and the timing. Linux trains the link | `kr260_dp_audio`: the I2S into the live audio input of the PS DisplayPort (`dp_s_axis_audio_*`) |
 
 The KR260 has no HDMI output. Its DisplayPort is a part of the PS (DPSUB). Linux starts it from a frame buffer in
 DDR. A tool then changes the source of the DPSUB to the live input. The sequence and the alternatives are in

@@ -107,7 +107,7 @@ constraints and is experimental (see [Status](#status)).
 | ------------ | ------------------------ | ----- | ------ |
 | `zybo-z7-20` | Zynq-7020 (Digilent Zybo Z7-20) | armhf | menu, MSX, SNES, PSX and N64 run from the SD card; DVI or HDMI with sound |
 | `zcu106` | Zynq UltraScale+ ZU7EV (AMD ZCU106) | arm64 kernel, armhf RootFS | menu, MSX, SNES, PSX and N64 load and show a picture with a network boot (gaps: status block below); HDMI with sound through GTH |
-| `kr260` | Kria K26 (AMD KR260) | arm64 kernel, armhf RootFS | draft, no build: video into the live input of the PS DisplayPort, no sound. The board contract: [doc/PORTING.md](doc/PORTING.md) §7.1 |
+| `kr260` | Kria K26 (AMD KR260) | arm64 kernel, armhf RootFS | menu and MSX run: video into the live video input and sound into the live audio input of the PS DisplayPort. SNES, PSX and N64 are not built. The board contract: [doc/PORTING.md](doc/PORTING.md) §7.1 |
 
 The Zybo Z7-20 (XC7Z020) is small for the larger cores. Thus these cores run with compromises:
 
@@ -127,10 +127,12 @@ What works where, for each core, board and stage (stages: [doc/PORTING.md](doc/P
 
 | Core | prepare | ooc | timing | load | picture | audio | input | speed | saves | extras |
 |---|---|---|---|---|---|---|---|---|---|---|
+| menu | – | – | Tim | HW | HW | – | – | HW | – | – |
+| msx | – | – | Tim | HW | HW | HW | – | – | – | – |
 
 | Board | boot | linux | main | video | audio | input | sd | net | switch |
 |---|---|---|---|---|---|---|---|---|---|
-| kr260 | – | – | – | – | – | – | – | – | – |
+| kr260 | HW | HW | HW | HW | HW | HW | – | HW | HW |
 
 **zcu106**
 

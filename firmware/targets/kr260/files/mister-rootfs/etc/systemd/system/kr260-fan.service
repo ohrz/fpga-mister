@@ -1,0 +1,29 @@
+# ----------------------------------------------------------------------------------
+#  Title      : Fixed slow speed of the KR260 carrier fan
+#  Project    : fpga-mister
+#  File       : kr260-fan.service (/etc/systemd/system)
+#  Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+#  Company    : OHRZ
+#  Created    : 2026-11-27
+# ----------------------------------------------------------------------------------
+#  Description: Sets the duty of pwm-fan (PS TTC0 channel 2, EMIO to FAN_EN) once at
+#               boot to 12 of 255. The kernel has no thermal zone for the fan, so
+#               the value stays. Without this unit, the fan runs at full speed.
+#               Each kr260 MiSTer design connects TTC0 to FAN_EN, so the speed stays
+#               after a core change. A PL load can make the fan run at full speed
+#               for the time of the load.
+# ----------------------------------------------------------------------------------
+#  Copyright (c) 2026 by OHRZ
+# ----------------------------------------------------------------------------------
+
+[Unit]
+Description=KR260 carrier fan at a fixed slow speed (pwm-fan duty 12 of 255)
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'for h in /sys/class/hwmon/hwmon*; do [ "$$(cat $$h/name)" = pwmfan ] && echo 12 > $$h/pwm1 && exit 0; done; echo "pwm-fan not found"; exit 1'
+
+[Install]
+WantedBy=multi-user.target

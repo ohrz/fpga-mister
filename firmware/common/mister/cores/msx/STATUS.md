@@ -22,3 +22,7 @@ shows the overview of all cores. Commit `-` means the evidence comes from the pu
 | zcu106 | audio | HW | - | 2026-11-07 | sound over HDMI |
 | zcu106 | input | HW | - | 2026-11-07 | virtual keyboard: `dir` in MSX-DOS |
 | zcu106 | speed | HW | - | 2026-11-07 | hwtest: 59.97 Hz over 30 s (nominal 59.92 ±0.2 %), edges 95.455 % (pacer 95.455 %) |
+| kr260 | timing | Timing | - | 2026-11-27 | `kr260_msx` with sound: WNS +1.799 ns, WHS +0.011 ns |
+| kr260 | load | HW | - | 2026-11-26 | Core change from the menu (`load_core`): `Core name is "MSX"`, STATUS 0, stage C reads run, `boot.vhd` open |
+| kr260 | picture | HW | - | 2026-11-27 | MSX-DOS from `boot.vhd` through the DisplayPort live input at 1280x720@59.99 (active DP to HDMI adapter), 4:3 with black borders. `ver` and `dir` through the USB keyboard of Main. A game ROM through `romload` starts |
+| kr260 | audio | HW | - | 2026-11-27 | DisplayPort live audio (`kr260_dp_audio`, `kr260_dp_live.py on`): 1 kHz test tone 99.99 % of the sample steps correct, game sound complete |

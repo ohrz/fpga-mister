@@ -23,15 +23,21 @@
 #     mister/m_axi_vbuf    (AXI3 64, 100 MHz)      -> SmartConnect -> S_AXI_HP1_FPD (128)
 #     mister/m_axi_ddram   (G_DDRAM 1, ddram_clk)  -> SmartConnect -> S_AXI_HP2_FPD (128)
 #     mister/m_axi_coremem (G_COREMEM 1)           -> SmartConnect -> S_AXI_HP3_FPD (128)
+#     These are the default ports. LAB_HP_MAP_kr260 of the lab can give a master another port
+#     (hp0..hp3, hpc0, hpc1). The SmartConnect of a master has the name sc_<port>.
 #     mister/vid_* -> dp_live (kr260_dp_live) -> live video input of the PS DisplayPort
+#     mister/i2s_* -> dp_audio (kr260_dp_audio, i2s_rx of hdmi-tx) -> live audio input of the PS DisplayPort
 #
 #   The KR260 has no HDMI output. The video goes into the live video input of
 #   the DisplayPort of the PS (DPSUB, one lane). Linux sets the link and the
 #   mode (1280x720@60). The live input then replaces the frame buffer of the
 #   DPDMA (doc/ARCHITECTURE.md §4, firmware/targets/kr260/README.md). The PL
 #   gives the pixel clock (dp_video_in_clk) and the timing (hsync, vsync, de).
-#   Sound: the KR260 has no codec, and the DisplayPort driver ignores the live
-#   audio input. The I2S of mister_zynq stays open in this draft.
+#   Sound: the KR260 has no codec. kr260_dp_audio puts the I2S of mister_zynq
+#   into the live audio input of the DisplayPort (dp_s_axis_audio_*, clock
+#   clk_audio = 512 x 48 kHz). The driver ignores the live audio input, so
+#   kr260_dp_live.py sets the audio registers (firmware/targets/kr260/README.md).
+#   Its counters go to board_status bits 31:9, CTRL bits 7:3 select test modes.
 #
 #   PS-PL widths: every port at 128 bit, as on the ZCU106 (reset value of the
 #   AFI registers). Check the AFI registers under the Kria boot firmware on the
@@ -43,6 +49,14 @@
 #   audio, master clock of the profile, 50 MHz, master without BUFG; clk_pix
 #   (MMCM from 25 MHz, M 37.125, D 1, O 12.5) = 74.25 MHz for clk_hdmi and
 #   dp_video_in_clk. No PS clock and no PS reset are used.
+#   The XCK26 has four MMCMs in one column (clock regions X1Y0..X1Y3). clk_25
+#   (pin C3, bank 66) is in X1Y3, so clk_base is MMCM_X0Y3. A BUFGCE of an MMCM
+#   can drive an MMCM only in the clock region above or below it (rule_bufg_mmcm),
+#   and only X1Y2 is next to X1Y3. kr260_mister.xdc puts clk_core there (direct
+#   route) and clk_pix in X1Y1 with CLOCK_DEDICATED_ROUTE BACKBONE on its 25 MHz
+#   input: the pixel clock is asynchronous to the other clocks. The 50 MHz of
+#   clk_core is no source for clk_pix: its VCO follows the master clock of the
+#   profile (50.405 MHz for menu).
 #
 #   Address map (M_AXI_HPM0_FPD): 0xA000_0000 hps_bus_axi (4 KB); the HP ports
 #   see DDR_LOW (0x0000_0000-0x7FFF_FFFF) with the physical addresses of the
@@ -75,9 +89,15 @@ if {[mister_direct_video $core]} {
 add_files -fileset constrs_1 -norecurse [file join $target_dir constraints kr260_mister.xdc]
 # more constraints of this board unit, if the lab names them (LAB_EXTRA_XDC_<board>, lab.mk)
 mister_extra_xdc
-# TODO(kr260): a clock region constraint of the gated core clocks as zcu106_core_buf.xdc, after the
-# first placement shows the clock region of clk_core
+# TODO(kr260): a clock region constraint of the gated core clocks as zcu106_core_buf.xdc, if a large
+# core fails the timing (clk_core is MMCM_X0Y2, clock region X1Y2; menu meets the timing without it)
 add_files -norecurse [glob [file join $target_dir hdl *.vhd]]
+# I2S receiver of hdmi-tx (firmware/common/ip/hdmi-tx) for kr260_dp_audio
+set i2s_rx [file join $root_dir firmware common ip hdmi-tx src i2s_rx.vhd]
+if {![file isfile $i2s_rx]} {
+  error "i2s_rx of hdmi-tx not found: $i2s_rx"
+}
+add_files -norecurse $i2s_rx
 update_compile_order -fileset sources_1
 
 create_bd_design design_1
@@ -87,14 +107,23 @@ set ps [create_bd_cell -type ip -vlnv xilinx.com:ip:zynq_ultra_ps_e:3.5 zynq_ult
 apply_bd_automation -rule xilinx.com:bd_rule:zynq_ultra_ps_e -config {apply_board_preset "1"} $ps
 set ddram [mister_ddram $core]
 set coremem [mister_coremem $core]
-set_property -dict [list CONFIG.PSU__USE__M_AXI_GP0 {1} CONFIG.PSU__MAXIGP0__DATA_WIDTH {128} \
-  CONFIG.PSU__USE__M_AXI_GP1 {0} CONFIG.PSU__USE__M_AXI_GP2 {0} \
-  CONFIG.PSU__USE__S_AXI_GP2 {1} CONFIG.PSU__SAXIGP2__DATA_WIDTH {128} \
-  CONFIG.PSU__USE__S_AXI_GP3 {1} CONFIG.PSU__SAXIGP3__DATA_WIDTH {128} \
-  CONFIG.PSU__USE__S_AXI_GP4 [expr {$ddram ? 1 : 0}] CONFIG.PSU__SAXIGP4__DATA_WIDTH {128} \
-  CONFIG.PSU__USE__S_AXI_GP5 [expr {$coremem ? 1 : 0}] CONFIG.PSU__SAXIGP5__DATA_WIDTH {128} \
-  CONFIG.PSU__USE__VIDEO {1} \
-  CONFIG.PSU__FPGA_PL1_ENABLE {0} CONFIG.PSU__FPGA_PL2_ENABLE {0} CONFIG.PSU__FPGA_PL3_ENABLE {0}] $ps
+# PS port of each memory master: HP0 to HP3 by default, LAB_HP_MAP_kr260 of the lab can change it
+set hp_masters [list m_axi_sdram m_axi_vbuf]
+if {$ddram}   { lappend hp_masters m_axi_ddram }
+if {$coremem} { lappend hp_masters m_axi_coremem }
+set hpn [mister_hp_map {m_axi_sdram hp0 m_axi_vbuf hp1 m_axi_ddram hp2 m_axi_coremem hp3} $hp_masters]
+set gp_used {}
+foreach m $hp_masters { lappend gp_used [dict get [mister_ps_port [dict get $hpn $m]] gp] }
+# S_AXI_GP0/1 = HPC0/1, S_AXI_GP2..5 = HP0..3, each at 128 bit
+set hp_cfg {}
+foreach g {0 1 2 3 4 5} {
+  lappend hp_cfg CONFIG.PSU__USE__S_AXI_GP$g [expr {$g in $gp_used ? 1 : 0}] CONFIG.PSU__SAXIGP${g}__DATA_WIDTH {128}
+}
+set_property -dict [concat [list CONFIG.PSU__USE__M_AXI_GP0 {1} CONFIG.PSU__MAXIGP0__DATA_WIDTH {128} \
+  CONFIG.PSU__USE__M_AXI_GP1 {0} CONFIG.PSU__USE__M_AXI_GP2 {0}] $hp_cfg [list \
+  CONFIG.PSU__USE__VIDEO {1} CONFIG.PSU__USE__AUDIO {1} \
+  CONFIG.PSU__TTC0__PERIPHERAL__ENABLE {1} CONFIG.PSU__TTC0__WAVEOUT__ENABLE {1} CONFIG.PSU__TTC0__WAVEOUT__IO {EMIO} \
+  CONFIG.PSU__FPGA_PL1_ENABLE {0} CONFIG.PSU__FPGA_PL2_ENABLE {0} CONFIG.PSU__FPGA_PL3_ENABLE {0}]] $ps
 
 #---- clocks: carrier oscillator 25 MHz -> 100 / 25 MHz -> clk_core as on the Zybo; clk_pix 74.25 MHz
 #     clk_base with safe clock startup (BUFGCE outputs enabled after lock), as on the ZCU106
@@ -164,6 +193,21 @@ foreach {pin psp} {dp_pixel dp_live_video_in_pixel1 dp_de dp_live_video_in_de \
   connect_bd_net [get_bd_pins dp_live/$pin] [get_bd_pins zynq_ultra_ps_e_0/$psp]
 }
 
+#---- sound: mister/i2s_* -> kr260_dp_audio -> live audio input of the DisplayPort (PS), all in clk_audio
+set da [create_bd_cell -type module -reference kr260_dp_audio dp_audio]
+connect_bd_net $clk_audio [get_bd_pins dp_audio/clk] [get_bd_pins zynq_ultra_ps_e_0/dp_s_axis_audio_clk]
+foreach {pin mp} {i2s_bclk i2s_bclk i2s_lrclk i2s_lrclk i2s_data i2s_data ctrl board_ctrl} {
+  connect_bd_net [get_bd_pins mister/$mp] [get_bd_pins dp_audio/$pin]
+}
+foreach {pin psp} {m_tdata dp_s_axis_audio_tdata m_tid dp_s_axis_audio_tid m_tvalid dp_s_axis_audio_tvalid \
+    m_tready dp_s_axis_audio_tready} {
+  connect_bd_net [get_bd_pins dp_audio/$pin] [get_bd_pins zynq_ultra_ps_e_0/$psp]
+}
+# the mixed audio output of the DPSUB is not used: it must not stall the mixer
+set one1 [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 one1]
+set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {1}] $one1
+connect_bd_net [get_bd_pins one1/dout] [get_bd_pins zynq_ultra_ps_e_0/dp_m_axis_mixed_audio_tready]
+
 #---- AXI-Lite: HPM0_FPD -> hps_bus_axi
 set axil [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 axil]
 set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}] $axil
@@ -174,21 +218,26 @@ connect_bd_net $rst0 [get_bd_pins axil/aresetn]
 
 #---- memory ports: AXI3 64 bit of mister_zynq -> SmartConnect (width and protocol) -> HP at 128 bit
 #     HP2/HP3 get the reset of mister_zynq on their clock, as on the ZCU106
-set hps [list m_axi_sdram 0 $clk_master $rst0 m_axi_vbuf 1 $clk0 $rst0]
-if {$ddram}   { lappend hps m_axi_ddram 2 [get_bd_pins mister/ddram_clk] [get_bd_pins mister/ddram_aresetn] }
-if {$coremem} { lappend hps m_axi_coremem 3 [get_bd_pins mister/coremem_clk] [get_bd_pins mister/coremem_aresetn] }
-foreach {m n clk rst} $hps {
-  set sc [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 sc_hp$n]
+set hps [list m_axi_sdram [dict get $hpn m_axi_sdram] $clk_master $rst0 m_axi_vbuf [dict get $hpn m_axi_vbuf] $clk0 $rst0]
+if {$ddram}   { lappend hps m_axi_ddram [dict get $hpn m_axi_ddram] [get_bd_pins mister/ddram_clk] [get_bd_pins mister/ddram_aresetn] }
+if {$coremem} { lappend hps m_axi_coremem [dict get $hpn m_axi_coremem] [get_bd_pins mister/coremem_clk] [get_bd_pins mister/coremem_aresetn] }
+foreach {m p clk rst} $hps {
+  set pp [mister_ps_port $p]
+  set sc [create_bd_cell -type ip -vlnv xilinx.com:ip:smartconnect:1.0 sc_$p]
   set_property -dict [list CONFIG.NUM_SI {1} CONFIG.NUM_MI {1}] $sc
-  connect_bd_intf_net [get_bd_intf_pins mister/$m] [get_bd_intf_pins sc_hp$n/S00_AXI]
-  connect_bd_intf_net [get_bd_intf_pins sc_hp$n/M00_AXI] [get_bd_intf_pins zynq_ultra_ps_e_0/S_AXI_HP${n}_FPD]
-  connect_bd_net $clk [get_bd_pins sc_hp$n/aclk] [get_bd_pins zynq_ultra_ps_e_0/saxihp${n}_fpd_aclk]
-  connect_bd_net $rst [get_bd_pins sc_hp$n/aresetn]
+  connect_bd_intf_net [get_bd_intf_pins mister/$m] [get_bd_intf_pins sc_$p/S00_AXI]
+  connect_bd_intf_net [get_bd_intf_pins sc_$p/M00_AXI] [get_bd_intf_pins zynq_ultra_ps_e_0/[dict get $pp intf]]
+  connect_bd_net $clk [get_bd_pins sc_$p/aclk] [get_bd_pins zynq_ultra_ps_e_0/[dict get $pp clk]]
+  connect_bd_net $rst [get_bd_pins sc_$p/aresetn]
 }
 
 #---- board: no PL buttons and no PL LEDs on the carrier. OSD with the keyboard (F12), SW of the
 #     DE10-Nano off. The LEDs of the DE10-Nano and the stage C error go to board_status (aux word 17,
-#     0xA000_0054): bits 7:0 LED, bit 8 status_err. Fan enable low = full speed.
+#     0xA000_0054): bits 7:0 LED, bit 8 status_err, bits 31:9 the counters of kr260_dp_audio
+#     (31:16 frames sent, 15:9 frames dropped).
+#     LED bit 6 (led_locked of pll_hdmi_adj) reads as 0: it was the only sink of pll_hdmi_adj, whose
+#     clock goes through a LUT (TIMING-14). Without the sink, synthesis removes pll_hdmi_adj, as on
+#     the ZCU106. The KR260 has no HDMI PLL that pll_hdmi_adj could tune.
 set btn0 [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 btn_off]
 set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}] $btn0
 connect_bd_net [get_bd_pins btn_off/dout] [get_bd_pins mister/btn_osd] [get_bd_pins mister/btn_user]
@@ -196,27 +245,39 @@ set sw0 [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 sw_off]
 set_property -dict [list CONFIG.CONST_WIDTH {4} CONFIG.CONST_VAL {0}] $sw0
 connect_bd_net [get_bd_pins sw_off/dout] [get_bd_pins mister/sw]
 
-set zero23 [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 zero23]
-set_property -dict [list CONFIG.CONST_WIDTH {23} CONFIG.CONST_VAL {0}] $zero23
+set zero1 [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 zero1]
+set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}] $zero1
+foreach {name from to} {led_lo 5 0 led_7 7 7} {
+  set sl [create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 $name]
+  set_property -dict [list CONFIG.DIN_WIDTH {8} CONFIG.DIN_FROM $from CONFIG.DIN_TO $to] $sl
+  connect_bd_net [get_bd_pins mister/led] [get_bd_pins $name/Din]
+}
 set bs [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat:2.1 board_status]
-set_property -dict [list CONFIG.NUM_PORTS {3} CONFIG.IN0_WIDTH {8} CONFIG.IN1_WIDTH {1} CONFIG.IN2_WIDTH {23}] $bs
-connect_bd_net [get_bd_pins mister/led] [get_bd_pins board_status/In0]
-connect_bd_net [get_bd_pins mister/status_err] [get_bd_pins board_status/In1]
-connect_bd_net [get_bd_pins zero23/dout] [get_bd_pins board_status/In2]
+set_property -dict [list CONFIG.NUM_PORTS {5} CONFIG.IN0_WIDTH {6} CONFIG.IN1_WIDTH {1} CONFIG.IN2_WIDTH {1} \
+  CONFIG.IN3_WIDTH {1} CONFIG.IN4_WIDTH {23}] $bs
+connect_bd_net [get_bd_pins led_lo/Dout] [get_bd_pins board_status/In0]
+connect_bd_net [get_bd_pins zero1/dout] [get_bd_pins board_status/In1]
+connect_bd_net [get_bd_pins led_7/Dout] [get_bd_pins board_status/In2]
+connect_bd_net [get_bd_pins mister/status_err] [get_bd_pins board_status/In3]
+connect_bd_net [get_bd_pins dp_audio/status] [get_bd_pins board_status/In4]
 connect_bd_net [get_bd_pins board_status/dout] [get_bd_pins mister/board_status]
 
+#---- carrier fan: PWM of PS TTC0 channel 2 (EMIO) directly to FAN_EN (low-active, low = full speed).
+#     The pwm-fan node of the kernel DTB (zynqmp-sm-k26-revA.dts: &ttc0 2 40000, PWM_POLARITY_INVERTED)
+#     already inverts, so the duty of pwm-fan is the fan speed. pwm-fan starts at full speed.
 create_bd_port -dir O fan_en_b
-set fan [create_bd_cell -type ip -vlnv xilinx.com:ip:xlconstant:1.1 fan_full]
-set_property -dict [list CONFIG.CONST_WIDTH {1} CONFIG.CONST_VAL {0}] $fan
-connect_bd_net [get_bd_pins fan_full/dout] [get_bd_ports fan_en_b]
+set fs [create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 fan_ttc2]
+set_property -dict [list CONFIG.DIN_WIDTH {3} CONFIG.DIN_FROM {2} CONFIG.DIN_TO {2}] $fs
+connect_bd_net [get_bd_pins zynq_ultra_ps_e_0/emio_ttc0_wave_o] [get_bd_pins fan_ttc2/Din]
+connect_bd_net [get_bd_pins fan_ttc2/Dout] [get_bd_ports fan_en_b]
 
 #---- address map
 assign_bd_address -offset 0xA0000000 -range 0x1000 \
   -target_address_space [get_bd_addr_spaces zynq_ultra_ps_e_0/Data] \
   [get_bd_addr_segs mister/s_axi/reg0] -force
-foreach {m n clk rst} $hps {
+foreach {m p clk rst} $hps {
   assign_bd_address -offset 0x00000000 -range 0x80000000 -target_address_space [get_bd_addr_spaces mister/$m] \
-    [get_bd_addr_segs zynq_ultra_ps_e_0/SAXIGP[expr {$n + 2}]/HP${n}_DDR_LOW] -force
+    [get_bd_addr_segs zynq_ultra_ps_e_0/[dict get [mister_ps_port $p] seg]] -force
 }
 
 validate_bd_design
@@ -250,4 +311,8 @@ foreach p {DIVIDE PHASE DUTY_CYCLE} {
 set vco [expr {25.0 * [get_property CONFIG.MMCM_CLKFBOUT_MULT_F $cp] / [get_property CONFIG.MMCM_DIVCLK_DIVIDE $cp]}]
 set fpix [expr {$vco / [get_property CONFIG.MMCM_CLKOUT0_DIVIDE_F $cp]}]
 if {abs($fpix - 74.25) > 0.0001} { error "clk_pix: [format %.5f $fpix] MHz instead of 74.25 MHz" }
+# routes of a checked build of this board unit, if the lab names one (LAB_INC_DCP_<design>, LAB_PRE_PLACE_TCL_<board>,
+# lab.mk)
+mister_lab_incremental
+mister_lab_pre_place
 puts "project ./$proj_name/$proj_name.xpr created"

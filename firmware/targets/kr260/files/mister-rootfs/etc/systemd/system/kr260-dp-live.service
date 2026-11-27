@@ -1,0 +1,33 @@
+# ----------------------------------------------------------------------------------
+#  Title      : DisplayPort live inputs of the KR260 after the start of Main
+#  Project    : fpga-mister
+#  File       : kr260-dp-live.service (/etc/systemd/system)
+#  Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+#  Company    : OHRZ
+#  Created    : 2026-11-27
+# ----------------------------------------------------------------------------------
+#  Description: Runs "kr260_dp_live.py on" after Main started: the video and the
+#               audio of the DisplayPort come from the PL (kr260_dp_live,
+#               kr260_dp_audio). The tool stops with no change if the DP mode is
+#               not 1280x720 (kernel argument video=DP-1:1280x720@60e). "on" leaves
+#               a process that holds a prepared PCM (PS audio clock). It stays in
+#               the unit until the stop, which runs "off".
+# ----------------------------------------------------------------------------------
+#  Copyright (c) 2026 by OHRZ
+# ----------------------------------------------------------------------------------
+
+[Unit]
+Description=KR260 DisplayPort live video and audio from the PL
+After=mister.service
+Wants=mister.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Main loads the menu core and sets its video mode first
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/python3 /usr/local/bin/kr260_dp_live.py on
+ExecStop=/usr/bin/python3 /usr/local/bin/kr260_dp_live.py off
+
+[Install]
+WantedBy=multi-user.target

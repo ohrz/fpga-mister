@@ -26,6 +26,14 @@ set_property PACKAGE_PIN A12 [get_ports fan_en_b]
 set_property IOSTANDARD LVCMOS33 [get_ports fan_en_b]
 set_false_path -to [get_ports fan_en_b]
 
+#---- MMCM sites: four MMCMs in one column; clk_base must be in the clock region of pin C3 (X1Y3),
+#     clk_core next to it (dedicated cascade route, rule_bufg_mmcm), clk_pix two regions lower
+#     through the clock backbone (asynchronous pixel clock, kr260_mister.tcl)
+set_property LOC MMCM_X0Y3 [get_cells design_1_i/clk_base/inst/mmcme4_adv_inst]
+set_property LOC MMCM_X0Y2 [get_cells design_1_i/clk_core/inst/mmcme4_adv_inst]
+set_property LOC MMCM_X0Y1 [get_cells design_1_i/clk_pix/inst/mmcme4_adv_inst]
+set_property CLOCK_DEDICATED_ROUTE BACKBONE [get_nets design_1_i/clk_base/inst/clk_out2]
+
 #---- clock groups (design_1_i/mister: the mister_zynq cell of the block design)
 #     clk_hdmi is the pixel clock of clk_pix (25 MHz -> 74.25 MHz). It is also dp_video_in_clk of
 #     the PS: the DisplayPort samples the live input on it.

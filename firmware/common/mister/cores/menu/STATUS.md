@@ -15,3 +15,7 @@ shows the overview of all cores. Commit `-` means the evidence comes from the pu
 | zcu106 | timing | Timing | - | 2026-11-07 | `zcu106_menu` WNS +3.954 ns, WHS +0.010 ns |
 | zcu106 | load | HW | - | 2026-11-07 | fpga_manager under the NFS-root Linux; HDMI_CTL done (all 33 ROM entries, Si5324 locked), GTH up, FIFO running, no underflow (debug word `0x0C1D0821`) |
 | zcu106 | picture | HW | - | 2026-11-07 | Menu with noise picture over HDMI after Main_MiSTer starts |
+| kr260 | timing | Timing | - | 2026-11-26 | `kr260_menu` with the fan PWM: WNS +3.525 ns, WHS +0.011 ns, `clk_pix` 74.2500 MHz |
+| kr260 | load | HW | - | 2026-11-26 | `fpga_manager` under the NFS-root Linux: ID 0x5A4D5354, GPI magic 0x5CA623A4. Main identifies `MENU`, STATUS 0 after 2.5 min, `ascal` writes the DDR |
+| kr260 | picture | HW | - | 2026-11-27 | Screenshot of Main from the `ascal` buffer: menu noise with the gradient, 640x240, output 1280x720. DisplayPort live input (`kr260_dp_live.py on`): menu and OSD at 1280x720@59.99 through an active DP to HDMI adapter, OSD centered |
+| kr260 | speed | HW | - | 2026-11-26 | `perf.py` with Main: core edges 100.000 %, master clock 84.7 to 85.3 MHz. Soak test 25 min with 5 loads (`sw/soak.py`): edges 100 % in 1500 of 1500 samples |
