@@ -446,6 +446,7 @@ The patches are in `firmware/common/mister/patches/Main_MiSTer/`. They apply aga
 | 0002 | `fpga_io.cpp`, `main.cpp`: Zynq backend (below) |
 | 0003 | `input.cpp`: `input_event_sec/usec` instead of `.time`, so that the build also works with 64-bit `time_t` (Ubuntu armhf) |
 | 0004 | `fpga_io.cpp`: quiesce the HP ports before a load (CTRL/STATUS, below) |
+| 0005 | `fpga_io.cpp`: ZynqMP, DisplayPort audio of the transmitter off during a load (below) |
 
 Zynq backend (`fpga_io.cpp`, `#ifdef ZYNQ`):
 - **Registers:** mmap of 0x4000_0000 (4 KB): GPO +0x0, GPI +0x4, ID +0x8 (§2). All functions above
@@ -463,6 +464,11 @@ Zynq backend (`fpga_io.cpp`, `#ifdef ZYNQ`):
   - Without the quiesce, an outstanding transaction would stay in the AFI of the port and cripple the next design.
   - Designs without the register never report idle. The 200 ms give the core time for all that `fpga_core_reset(1)`
     starts (the MSX clears its memory through HP0).
+- **DisplayPort audio** (patch 0005, ZynqMP with the DP live audio of the PL):
+  - Before a load, `zynq_load` sets `TX_AUDIO_CONTROL` (0xFD4A_0300) to 0, if it is 1 and `zynqmp-dpsub` is bound.
+  - A child process sets it back to 1 2000 ms after the load. Main itself ends at `app_restart`.
+  - The load stops the audio clock of the PL. Without the stop, a DP to HDMI adapter lost the audio stream in most
+    core changes. A start 150 ms after the load lost it in 4 of 9 core changes.
 - **Load of a core** (`fpga_load_rbf`):
   - Main writes the payload (without the `MiSTer` header, if present) to `/lib/firmware/mister/core.bin` (tmpfs).
   - Then it sets `flags` = 0 and `firmware` = `mister/core.bin` in the sysfs of `/sys/class/fpga_manager/fpga0`

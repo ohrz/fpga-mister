@@ -85,6 +85,8 @@ The KR260 has no audio codec. The sound goes into the live audio input of the DP
   0, bit 5 sets the preamble to 0. Main clears them at each core load. Use `kr260_dp_live.py tone on|off`.
 - `board_status` bits 31:16 count the frames that the DPSUB took (48000/s), bits 15:9 count dropped frames. The core
   `menu` sends no audio (0 frames/s).
+- Main patch 0005 stops the audio of the transmitter during a core load and starts it again 2000 ms after the load.
+  Without the stop, a DP to HDMI adapter lost the audio stream in most core changes.
 - After a stop of the audio of the transmitter, a receiver can need a mixer reset: `kr260_dp_live.py reset`.
 
 ## Software

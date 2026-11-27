@@ -1,0 +1,95 @@
+Title      : Stop the DisplayPort audio during a core load (ZynqMP)
+Project    : fpga-mister (patch for Main_MiSTer b57370d)
+Author     : Konstantin Schmidt (mr_pleasant@gmx.de)
+Company    : OHRZ
+Created    : 2026-11-27
+Description:
+  On a ZynqMP with the DP live audio of the PL (KR260), zynq_load sets TX_AUDIO_CONTROL of the
+  DP transmitter to 0 before the reconfiguration. A child process sets it back to 1 2000 ms after
+  the load. The reconfiguration stops the audio clock of the PL. Without this patch, a DP to HDMI
+  adapter and the HDMI sink behind it lost the audio stream in most core changes. A start 150 ms
+  after the load was not sufficient. The patch does nothing if the zynqmp-dpsub driver is not
+  bound or if the transmitter audio is off (Zynq-7000, ZCU106).
+
+--- a/fpga_io.cpp
++++ b/fpga_io.cpp
+@@ -20,6 +20,7 @@
+ #ifdef ZYNQ
+ #include <sys/syscall.h>
+ #include <linux/reboot.h>
++#include <sys/mman.h>
+ 
+ // Zynq (fpga-mister): the PL bus hps_bus_axi replaces the HPS GPO/GPI registers (GPO at 0x0,
+ // GPI at 0x4, ID at 0x8). Zynq-7000: M_AXI_GP0 at 0x40000000; ZynqMP: M_AXI_HPM0_FPD at
+@@ -132,6 +133,56 @@
+ 	printf("PL did not report idle (design without quiesce)\n");
+ }
+ 
++// ZynqMP DisplayPort live audio (KR260): a reconfiguration stops the audio clock of the PL
++// (dp_s_axis_audio_clk). If the DP transmitter sends audio at that time, a DP to HDMI adapter
++// and the HDMI sink behind it can lose the audio stream. zynq_load therefore stops the
++// transmitter audio before the load. A start right after the load (150 ms) lost the audio stream
++// in 4 of 9 core changes, a start after 1000 ms or 2000 ms in 0 of 10 (KR260, 2026-11-27).
++// A child process does the start, because app_restart ends this process after the load. This
++// occurs only if the zynqmp-dpsub driver is bound (DPSUB clocks on) and the transmitter audio
++// was on.
++#define ZYNQMP_DP_BASE          0xFD4A0000
++#define ZYNQMP_DP_AUDIO_CONTROL (0x300 / 4)   // TX_AUDIO_CONTROL, bit 0 enable
++#define ZYNQMP_DPSUB_BOUND      "/sys/bus/platform/drivers/zynqmp-dpsub/fd4a0000.display"
++#define ZYNQMP_DP_AUDIO_DELAY   2000000   // us from the end of the load to the start
++
++static int dp_audio_stopped = 0;
++
++static void zynqmp_dp_audio_stop()
++{
++	if (FPGA_REG_BASE != FPGA_REG_BASE_ZYNQMP || access(ZYNQMP_DPSUB_BOUND, F_OK)) return;
++	volatile uint32_t *dp = (volatile uint32_t*)shmem_map(ZYNQMP_DP_BASE, 0x1000);
++	if (!dp) return;
++	if (dp[ZYNQMP_DP_AUDIO_CONTROL] & 1)
++	{
++		dp[ZYNQMP_DP_AUDIO_CONTROL] = 0;
++		dp_audio_stopped = 1;
++		printf("DP audio stopped for the load\n");
++	}
++	shmem_unmap((void*)dp, 0x1000);
++}
++
++static void zynqmp_dp_audio_start()
++{
++	if (!dp_audio_stopped) return;
++	dp_audio_stopped = 0;
++	printf("DP audio starts again in %d ms\n", ZYNQMP_DP_AUDIO_DELAY / 1000);
++	fflush(stdout);
++	// the child uses only calls that are safe after fork in a program with threads. It is an
++	// orphan after app_restart, and init collects it
++	if (fork() == 0)
++	{
++		usleep(ZYNQMP_DP_AUDIO_DELAY);
++		int fd = open("/dev/mem", O_RDWR | O_SYNC);
++		if (fd >= 0)
++		{
++			void *p = mmap(NULL, 0x1000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, ZYNQMP_DP_BASE);
++			if (p != MAP_FAILED) ((volatile uint32_t*)p)[ZYNQMP_DP_AUDIO_CONTROL] = 1;
++		}
++		_exit(0);
++	}
++}
++
+ // full configuration through the fpga_manager: the payload is a byte-swapped Xilinx .bin
+ // (bootgen -process_bitstream bin), handed over as firmware file in /lib/firmware
+ static int zynq_load(const void *data, size_t size)
+@@ -147,12 +198,14 @@
+ 	close(fd);
+ 	if (n != (ssize_t)size) return -2;
+ 
++	zynqmp_dp_audio_stop();
+ 	if (pl_ok) zynq_quiesce();
+ 
+ 	// no GP0 access from here until the new design answers
+ 	pl_ok = 0;
+ 	if (!zynq_sysfs_write("flags", "0") || !zynq_sysfs_write("firmware", ZYNQ_FW_NAME)) return -3;
+ 	pl_ok = zynq_pl_check();
++	if (pl_ok) zynqmp_dp_audio_start();
+ 	return pl_ok ? 0 : -4;
+ }
+ 

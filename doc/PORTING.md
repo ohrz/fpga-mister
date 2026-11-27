@@ -160,7 +160,7 @@ iterations. Each change belongs in exactly one location. The table gives the loc
 | whole module unsuitable (PLL, `lcell` ring, SDRAM controller in stage D) | replacement file in the profile: `core_exclude` + `core_add`, same module name and same ports | `cores/msx/pll.vhd`, `cores/menu/lfsr.vhd` |
 | mechanical Quartus/Vivado difference (syntax, visibility, port kind), countable | rule in `cores/<core>/rules.py` with expected hit count | `t80-ioq-mask`, `sdram-dq-*` |
 | the same difference in `sys/` | `SYS_RULES` in `prepare_sources.py` (for all cores) | `sys-hps-io-ps2-scope` |
-| behavioral change | patch `cores/<core>/patches/NNNN-<topic>.patch` with header (Main_MiSTer: `patches/Main_MiSTer/`); new logic as a separate VHDL file in the profile with testbench, the patch only wires it in | Main_MiSTer 0001–0004; MSX_MiSTer 0001 + `cores/msx/scc_rom_hide.vhd` |
+| behavioral change | patch `cores/<core>/patches/NNNN-<topic>.patch` with header (Main_MiSTer: `patches/Main_MiSTer/`); new logic as a separate VHDL file in the profile with testbench, the patch only wires it in | Main_MiSTer 0001–0005; MSX_MiSTer 0001 + `cores/msx/scc_rom_hide.vhd` |
 | unused file that Vivado does not parse | `core_exclude` | MSX `*/VM2413/*` |
 
 Known differences (a rule or a replacement solves each of them):
